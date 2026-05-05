@@ -1,0 +1,205 @@
+/* ====================================================================
+   Lucky HQ — 픽셀 타이쿤 × CRT 터미널 미학
+   - 한국어 픽셀 폰트(DungGeunMo) + 본문 한글 가독 폰트(Pretendard)
+   - 부드러운 드롭섀도우 대신 stepped offset 그림자 (픽셀 감)
+   - 다크 네이비 + 클로버 골드/그린 액센트
+   ==================================================================== */
+
+@font-face {
+  font-family: 'DungGeunMo';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/DungGeunMo.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css');
+
+:root {
+  /* surface */
+  --bg-deep:        #0a0e1a;
+  --bg-surface:     #131a2c;
+  --bg-raised:      #1a2238;
+  --bg-elev:        #232c46;
+
+  /* border */
+  --border:         #243049;
+  --border-strong:  #3a4a6e;
+  --border-glow:    #4d5f8a;
+
+  /* text */
+  --text:           #e8edf5;
+  --text-muted:     #8b94ad;
+  --text-dim:       #5a6480;
+
+  /* accents */
+  --clover-gold:    #e0b84a;
+  --clover-green:   #4ade80;
+  --amber:          #f59e0b;
+  --crt-amber:      #ffb454;
+  --danger:         #ef4444;
+  --info:           #60a5fa;
+
+  /* fonts */
+  --font-pixel:     'DungGeunMo', 'Press Start 2P', ui-monospace, monospace;
+  --font-body:      'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono:      ui-monospace, 'JetBrains Mono', 'Menlo', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+
+  /* 미세한 스캔라인 + 그리드 */
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px),
+    radial-gradient(ellipse at top, rgba(224, 184, 74, 0.04), transparent 60%);
+}
+
+a { color: var(--clover-gold); text-decoration: none; }
+a:hover { color: var(--crt-amber); }
+
+button {
+  font-family: var(--font-body);
+  font-size: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* === 픽셀 박스: 본부 모든 패널의 기본 외피 === */
+.pixel-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  box-shadow:
+    0 0 0 1px var(--bg-deep),
+    4px 4px 0 0 var(--border);
+  border-radius: 2px;
+}
+
+.pixel-box.tight { box-shadow: 0 0 0 1px var(--bg-deep), 2px 2px 0 0 var(--border); }
+
+/* === 픽셀 헤더 === */
+.pixel-h {
+  font-family: var(--font-pixel);
+  font-weight: normal;
+  letter-spacing: 0.02em;
+  color: var(--clover-gold);
+  text-transform: uppercase;
+}
+
+/* === 픽셀 버튼 === */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  box-shadow: 2px 2px 0 0 var(--border);
+  border-radius: 2px;
+  font-size: 13px;
+  transition: transform 0.04s ease, box-shadow 0.04s ease;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--border-glow);
+  box-shadow: 2px 2px 0 0 var(--border-strong);
+}
+.btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 0 var(--border);
+}
+.btn-primary {
+  background: linear-gradient(180deg, #e0b84a, #b88e2a);
+  color: #1a1408;
+  border-color: #8a6a1f;
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+
+/* === 입력 === */
+.input, .textarea, .select {
+  width: 100%;
+  background: var(--bg-deep);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  border-radius: 2px;
+  outline: none;
+}
+.input:focus, .textarea:focus, .select:focus {
+  border-color: var(--clover-gold);
+  box-shadow: 0 0 0 1px var(--clover-gold);
+}
+.textarea { min-height: 160px; resize: vertical; line-height: 1.6; }
+
+label.field {
+  display: block;
+  margin-bottom: 14px;
+}
+label.field > span {
+  display: block;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* === 상태 배지 === */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+.badge.ok      { color: var(--clover-green); border-color: #2f6c46; background: rgba(74,222,128,0.08); }
+.badge.run     { color: var(--crt-amber);    border-color: #6c4f2a; background: rgba(245,158,11,0.08); }
+.badge.fail    { color: var(--danger);       border-color: #6c2a2a; background: rgba(239,68,68,0.08); }
+.badge.idle    { color: var(--text-dim);     border-color: var(--border); }
+.badge.piloting{ color: var(--info);         border-color: #2a4a6c; background: rgba(96,165,250,0.08); }
+
+/* === blink dot === */
+.dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  background: var(--clover-green);
+  border-radius: 1px;
+  animation: blink 1.4s steps(2) infinite;
+}
+.dot.run    { background: var(--crt-amber); }
+.dot.fail   { background: var(--danger);    animation-duration: 0.7s; }
+.dot.idle   { background: var(--text-dim);  animation: none; }
+
+@keyframes blink { 50% { opacity: 0.2; } }
+
+/* === scrollbars === */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: var(--bg-deep); }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }

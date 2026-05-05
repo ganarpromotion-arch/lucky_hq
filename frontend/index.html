@@ -1,98 +1,265 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>🍀 Lucky HQ</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍀 Lucky HQ — AI 운영본부</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  /* ==== 메인 콘솔 전용 ==== */
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    grid-template-columns: 280px 1fr 320px;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "left   center right";
+    height: 100vh;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--font-pixel);
+    font-size: 16px;
+    color: var(--clover-gold);
+  }
+  .brand .clover { font-size: 22px; filter: drop-shadow(0 0 6px rgba(74,222,128,0.5)); }
+  .topbar .meta { display: flex; align-items: center; gap: 18px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+  .topbar .meta .clock { color: var(--crt-amber); }
+
+  /* === 좌측: 직원 패널 === */
+  .panel-left { grid-area: left; background: var(--bg-surface); overflow-y: auto; }
+  .panel-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel-head .title { font-family: var(--font-pixel); font-size: 12px; color: var(--text-muted); letter-spacing: 0.05em; }
+  .panel-head .count { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+  .agent-list { display: flex; flex-direction: column; }
+  .agent-row {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.08s ease;
+  }
+  .agent-row:hover { background: var(--bg-raised); }
+  .agent-row.has-dept { border-left: 2px solid var(--clover-gold); }
+  .agent-row .av {
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
+    border-radius: 2px;
+    font-size: 16px;
+  }
+  .agent-row .info { min-width: 0; }
+  .agent-row .name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent-row .status { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent-row .status.run { color: var(--crt-amber); }
+
+  /* === 중앙: 픽셀 오피스 === */
+  .panel-center {
+    grid-area: center;
+    background:
+      repeating-linear-gradient(0deg, transparent 0px, transparent 23px, rgba(255,255,255,0.02) 23px, rgba(255,255,255,0.02) 24px),
+      repeating-linear-gradient(90deg, transparent 0px, transparent 23px, rgba(255,255,255,0.02) 23px, rgba(255,255,255,0.02) 24px),
+      var(--bg-deep);
+    overflow: auto;
+    padding: 28px;
+    position: relative;
+  }
+  .office-title {
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    color: var(--clover-gold);
+    text-align: center;
+    margin-bottom: 20px;
+    letter-spacing: 0.08em;
+  }
+  .office-title small {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    letter-spacing: 0;
+  }
+
+  .office {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .desk {
+    aspect-ratio: 1 / 1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    box-shadow: 3px 3px 0 0 var(--border);
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 6px;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.06s, box-shadow 0.06s;
+  }
+  .desk:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 0 var(--border-strong);
+    border-color: var(--clover-gold);
+  }
+  .desk:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 0 var(--border);
+  }
+  .desk .av { font-size: 32px; line-height: 1; }
+  .desk .role {
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    color: var(--text);
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+  .desk .stat {
+    position: absolute;
+    top: 6px; right: 6px;
+    font-family: var(--font-pixel);
+    font-size: 8px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+  .desk.has-dept::after {
+    content: "부서";
+    position: absolute;
+    bottom: 6px; left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-pixel);
+    font-size: 8px;
+    color: var(--clover-gold);
+    letter-spacing: 0.08em;
+    border: 1px solid var(--clover-gold);
+    padding: 1px 4px;
+    border-radius: 1px;
+    background: rgba(224,184,74,0.08);
+  }
+  .desk.is-busy { animation: deskBusy 0.9s steps(2) infinite; }
+  @keyframes deskBusy {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-2px); }
+  }
+  .desk.is-busy .stat { color: var(--crt-amber); }
+  .desk.is-busy .av { filter: drop-shadow(0 0 5px rgba(255,180,84,0.5)); }
+
+  /* === 우측: 실시간 로그 === */
+  .panel-right { grid-area: right; background: var(--bg-surface); display: flex; flex-direction: column; }
+  .log-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .log-row {
+    display: grid;
+    grid-template-columns: 56px 64px 1fr;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .log-row .t { color: var(--text-dim); }
+  .log-row .a { color: var(--clover-gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .log-row .m { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .log-empty { color: var(--text-dim); padding: 16px; text-align: center; font-family: var(--font-mono); font-size: 11px; }
+
+  /* 모바일/좁은 화면 — 1열 스택 */
+  @media (max-width: 960px) {
+    .app {
+      grid-template-columns: 1fr;
+      grid-template-rows: 56px auto auto auto;
+      grid-template-areas:
+        "topbar"
+        "center"
+        "left"
+        "right";
+      height: auto;
+    }
+    .panel-left, .panel-right { max-height: 360px; }
+    .office { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
 </head>
 <body>
-<header>
-  <h1>🍀 Lucky HQ</h1>
-  <div class="actions">
-    <button id="btn-refresh" title="새로고침">↻</button>
-    <button id="btn-new-agent" class="primary">+ 직원 추가</button>
-  </div>
-</header>
+<div class="app">
 
-<main class="panels">
-  <section class="panel left">
-    <h2>직원</h2>
-    <ul id="agent-list">
-      <li class="empty">불러오는 중…</li>
-    </ul>
-  </section>
-
-  <section class="panel center">
-    <h2>오피스</h2>
-    <div id="office">
-      <div class="placeholder">
-        <div class="big">🏢</div>
-        <div>픽셀 오피스 애니메이션은 V2에서 추가됩니다.<br/>
-        지금은 좌측 직원 카드의 ▶ 일하기 버튼을 눌러보세요.</div>
-      </div>
-      <div id="job-detail" hidden>
-        <h3 id="job-title"></h3>
-        <pre id="job-body"></pre>
-      </div>
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="clover">🍀</span>
+      <span>Lucky HQ — AI 운영본부</span>
     </div>
-  </section>
-
-  <section class="panel right">
-    <h2>로그</h2>
-    <ul id="log-list"></ul>
-  </section>
-</main>
-
-<dialog id="wizard">
-  <form method="dialog" id="wizard-form">
-    <h3>직원 추가 마법사</h3>
-
-    <div class="step" id="step-1">
-      <label>어떤 직원이 필요한가요? (자연어로 적어주세요)</label>
-      <textarea id="wizard-prompt"
-        placeholder="예: 매일 아침에 AI 관련 이슈 5개 찾아서 정리해주는 직원"></textarea>
-      <div class="row">
-        <button type="button" id="wizard-suggest" class="primary">추천 받기</button>
-        <button type="button" id="wizard-skip">직접 고를게요 →</button>
-      </div>
-      <pre id="wizard-suggestion" hidden></pre>
+    <div class="meta">
+      <span>v1.0.0</span>
+      <span id="health-ind">● 연결 확인 중</span>
+      <span class="clock" id="clock">--:--:--</span>
     </div>
+  </header>
 
-    <div class="step" id="step-2" hidden>
-      <hr/>
-      <label>이름</label>
-      <input id="wizard-name" placeholder="예: 새벽 이슈 스카우트" />
-
-      <label>모듈 (직원 종류)</label>
-      <select id="wizard-module"></select>
-      <small id="wizard-module-desc" class="hint"></small>
-
-      <div id="wizard-config"></div>
-
-      <label>스케줄 (cron, 비워두면 수동 실행만)</label>
-      <input id="wizard-cron" placeholder="0 9 * * *  (매일 오전 9시)" />
-      <small class="hint">분 시 일 월 요일 — 비우면 ▶ 일하기 버튼으로만 실행</small>
-
-      <label>LLM 등급</label>
-      <select id="wizard-tier">
-        <option value="">(모듈 기본값)</option>
-        <option value="T0">T0 — 무료 (Groq/Gemini)</option>
-        <option value="T1">T1 — Haiku</option>
-        <option value="T2">T2 — Sonnet (글쓰기·전략용)</option>
-      </select>
-
-      <div class="row">
-        <button type="button" id="wizard-create" class="primary">생성</button>
-        <button type="button" id="wizard-back">← 뒤로</button>
-      </div>
+  <!-- LEFT: 직원 명단 -->
+  <aside class="panel-left">
+    <div class="panel-head">
+      <span class="title">직원 · 하는 일</span>
+      <span class="count" id="agent-count">--</span>
     </div>
+    <div class="agent-list" id="agent-list">
+      <div class="log-empty">불러오는 중…</div>
+    </div>
+  </aside>
 
-    <button type="button" id="wizard-close" class="close">닫기</button>
-  </form>
-</dialog>
+  <!-- CENTER: 픽셀 오피스 -->
+  <main class="panel-center">
+    <div class="office-title">
+      ◆ LUCKY HQ FLOOR ◆
+      <small>직원을 클릭하면 부서 작업창으로 이동합니다</small>
+    </div>
+    <div class="office" id="office"></div>
+  </main>
 
-<script src="/static/wizard.js"></script>
-<script src="/static/app.js"></script>
+  <!-- RIGHT: 실시간 로그 -->
+  <aside class="panel-right">
+    <div class="panel-head">
+      <span class="title">실시간 로그</span>
+      <span class="count" id="log-count">--</span>
+    </div>
+    <div class="log-list" id="log-list">
+      <div class="log-empty">대기 중…</div>
+    </div>
+  </aside>
+
+</div>
+<script src="/static/console.js"></script>
 </body>
 </html>

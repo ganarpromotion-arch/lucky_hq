@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎵 음악제작 부서 — Lucky HQ</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+    height: 100vh;
+  }
+
+  .topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .crumb {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .crumb a { color: var(--text-muted); }
+  .crumb a:hover { color: var(--clover-gold); }
+  .crumb .sep { color: var(--text-dim); }
+  .crumb .here { color: var(--clover-gold); }
+
+  .topbar .meta { display: flex; gap: 14px; align-items: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+
+  .main {
+    grid-area: main;
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 18px;
+    padding: 22px;
+    overflow: auto;
+    background:
+      repeating-linear-gradient(0deg, transparent 0, transparent 23px, rgba(255,255,255,0.015) 23px, rgba(255,255,255,0.015) 24px),
+      var(--bg-deep);
+  }
+
+  .card { padding: 18px; }
+  .card h2 {
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    color: var(--clover-gold);
+    margin-bottom: 14px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .card .sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+    margin-top: -10px;
+  }
+
+  .compose-actions {
+    display: flex; gap: 10px; align-items: center; justify-content: space-between;
+    margin-top: 6px;
+  }
+  .hint { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+  /* 작업 목록 */
+  .jobs { display: flex; flex-direction: column; gap: 10px; }
+  .job {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+  .job .meta { min-width: 0; }
+  .job .meta .title { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job .meta .sub  { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .job audio { width: 100%; margin-top: 8px; }
+
+  .player {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+    border-top: 1px dashed var(--border);
+    padding-top: 10px;
+  }
+
+  .empty { color: var(--text-dim); padding: 20px; text-align: center; font-family: var(--font-mono); font-size: 11px; }
+
+  @media (max-width: 900px) {
+    .main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="crumb">
+      <a href="/">🍀 Lucky HQ</a>
+      <span class="sep">▸</span>
+      <span>부서</span>
+      <span class="sep">▸</span>
+      <span class="here">🎵 음악제작</span>
+    </div>
+    <div class="meta">
+      <span class="badge piloting">PILOTING</span>
+      <span id="provider-status">provider: mureka</span>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- 작곡 의뢰 -->
+    <section class="pixel-box card">
+      <h2>◆ 작곡 의뢰</h2>
+      <div class="sub">가사·스타일을 입력하면 음악 프로듀서가 Mureka 부서를 통해 곡을 만듭니다.</div>
+
+      <label class="field">
+        <span>곡 제목 (선택)</span>
+        <input id="f-title" class="input" type="text" maxlength="200" placeholder="예: 진솔정 가을 메뉴 송">
+      </label>
+
+      <label class="field">
+        <span>스타일 / 장르</span>
+        <input id="f-style" class="input" type="text" maxlength="200" placeholder="예: city pop, female vocal, 90 bpm">
+      </label>
+
+      <label class="field">
+        <span>가사</span>
+        <textarea id="f-lyrics" class="textarea" maxlength="4000" placeholder="[Verse 1] ..."></textarea>
+      </label>
+
+      <div class="compose-actions">
+        <span class="hint" id="form-hint">평균 45~90초 소요 · 진행 상황은 우측에 표시</span>
+        <button id="btn-generate" class="btn btn-primary">▶ 작곡 시작</button>
+      </div>
+    </section>
+
+    <!-- 작업 목록 -->
+    <section class="pixel-box card">
+      <h2>◆ 작업 목록</h2>
+      <div class="sub">최근 의뢰한 곡과 처리 상태입니다. 진행 중인 곡은 자동으로 갱신됩니다.</div>
+      <div class="jobs" id="jobs">
+        <div class="empty">아직 의뢰한 곡이 없습니다.</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="/static/music.js"></script>
+</body>
+</html>

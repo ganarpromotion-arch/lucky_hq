@@ -1,0 +1,152 @@
+"""
+음악제작 부서 API
+
+엔드포인트:
+- POST /api/music/generate         : 곡 생성 요청 (Job 생성 + Mureka 호출)
+- GET  /api/music/jobs             : 부서 작업 목록
+- GET  /api/music/jobs/{job_id}    : 단일 작업 상태 (자동 폴링/갱신)
+
+Mureka 호출은 반드시 api_manager.call_api()를 통해서만 진행한다.
+"""
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+
+from ..db import get_db
+from ..models import Job, Agent, AuditLog
+from ..api_manager import call_api
+
+router = APIRouter(prefix="/api/music", tags=["music"])
+
+
+class GenerateRequest(BaseModel):
+    lyrics: str = Field(..., min_length=1, max_length=4000)
+    style: str = Field(default="pop", max_length=200)
+    title: str = Field(default="", max_length=200)
+
+
+def _set_agent_status(db: Session, slug: str, status: str) -> None:
+    a = db.query(Agent).filter_by(slug=slug).first()
+    if a:
+        a.current_status = status
+        a.last_seen_at = datetime.utcnow()
+
+
+def _audit(db: Session, action: str, target: str = "", detail: dict | None = None, actor: str = "music_producer") -> None:
+    db.add(AuditLog(actor=actor, action=action, target=target, detail=detail or {}))
+
+
+@router.post("/generate")
+async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
+    # 1) Job 생성
+    job = Job(
+        kind="music_generate",
+        department_slug="music",
+        agent_slug="music_producer",
+        status="pending",
+        input={"lyrics_len": len(req.lyrics), "style": req.style, "title": req.title},
+    )
+    db.add(job)
+    db.flush()
+
+    _set_agent_status(db, "music_producer", "곡 생성 요청 중")
+    _audit(db, "music.generate.requested", target=f"job:{job.id}", detail={"style": req.style, "title": req.title})
+    db.commit()
+
+    # 2) API 관리 직원 통해 Mureka 호출
+    payload = {"lyrics": req.lyrics, "style": req.style, "title": req.title}
+    result = await call_api(
+        db, provider="mureka", operation="generate",
+        payload=payload, requester="music_producer",
+    )
+
+    # 3) 결과 반영
+    job = db.get(Job, job.id)
+    if result.get("ok"):
+        data = result.get("data") or {}
+        # Mureka 응답 형태가 확정되지 않았으니 후보 키들을 모두 탐색
+        ext_id = data.get("id") or data.get("task_id") or data.get("song_id")
+        job.external_id = str(ext_id) if ext_id else None
+        job.status = "running"
+        job.output = {"submitted": data}
+        _set_agent_status(db, "music_producer", "Mureka 처리 대기")
+        _audit(db, "music.generate.submitted", target=f"job:{job.id}", detail={"external_id": ext_id})
+    else:
+        job.status = "failed"
+        job.error = result.get("error", "")
+        _set_agent_status(db, "music_producer", "대기")
+        _audit(db, "music.generate.failed", target=f"job:{job.id}", detail={"error": job.error})
+
+    db.commit()
+    return _serialize_job(job)
+
+
+@router.get("/jobs")
+def list_jobs(limit: int = 20, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Job)
+        .filter(Job.department_slug == "music")
+        .order_by(desc(Job.created_at))
+        .limit(min(limit, 100))
+        .all()
+    )
+    return [_serialize_job(j) for j in rows]
+
+
+@router.get("/jobs/{job_id}")
+async def get_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+
+    # 진행 중이면 Mureka에 polling
+    if job.status == "running" and job.external_id:
+        result = await call_api(
+            db, provider="mureka", operation="query",
+            payload={"id": job.external_id}, requester="music_producer",
+        )
+        if result.get("ok"):
+            data = result.get("data") or {}
+            mstatus = (data.get("status") or "").lower()
+            # Mureka 상태 매핑 (확정 전: 가능한 후보 다수 처리)
+            if mstatus in {"succeeded", "success", "done", "completed"}:
+                job.status = "done"
+                job.output = data
+                _set_agent_status(db, "music_producer", "대기")
+                _audit(db, "music.generate.done", target=f"job:{job.id}")
+            elif mstatus in {"failed", "error"}:
+                job.status = "failed"
+                job.error = str(data.get("error") or data.get("message") or "mureka 실패")
+                _set_agent_status(db, "music_producer", "대기")
+                _audit(db, "music.generate.failed", target=f"job:{job.id}", detail={"error": job.error})
+            else:
+                # 아직 진행 중: 출력만 갱신
+                job.output = data
+        db.commit()
+
+    return _serialize_job(job)
+
+
+def _serialize_job(j: Job) -> dict:
+    out = j.output or {}
+    # 결과 오디오 URL 추출 (Mureka 응답 후보 키)
+    audio_url = (
+        out.get("audio_url")
+        or out.get("url")
+        or (out.get("song") or {}).get("audio_url")
+        or (out.get("data") or {}).get("audio_url")
+    )
+    return {
+        "id": j.id,
+        "kind": j.kind,
+        "department": j.department_slug,
+        "status": j.status,
+        "external_id": j.external_id,
+        "input": j.input or {},
+        "audio_url": audio_url,
+        "error": j.error or "",
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+    }
