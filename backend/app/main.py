@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .db import Base, engine
 from .routers import console as console_router
 from .routers import music as music_router
+from .routers import settings as settings_router
 from .seed import run_seed
 
 
@@ -31,6 +32,7 @@ app = FastAPI(title="Lucky HQ", version="1.0.0", lifespan=lifespan)
 # API
 app.include_router(console_router.router)
 app.include_router(music_router.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/api/health")

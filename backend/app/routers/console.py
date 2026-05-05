@@ -15,8 +15,11 @@ router = APIRouter(prefix="/api", tags=["console"])
 
 
 @router.get("/agents")
-def list_agents(db: Session = Depends(get_db)):
-    rows = db.query(Agent).filter(Agent.is_active == True).all()
+def list_agents(include_inactive: bool = False, db: Session = Depends(get_db)):
+    q = db.query(Agent)
+    if not include_inactive:
+        q = q.filter(Agent.is_active == True)
+    rows = q.all()
     return [
         {
             "id": a.id,
@@ -27,6 +30,7 @@ def list_agents(db: Session = Depends(get_db)):
             "voice": a.voice,
             "current_status": a.current_status,
             "department_id": a.department_id,
+            "is_active": a.is_active,
         }
         for a in rows
     ]

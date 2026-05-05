@@ -89,3 +89,15 @@ class ApiCall(Base):
     request_summary = Column(JSON, default=dict)      # 키/시크릿 제거된 요약만
     response_summary = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Setting(Base):
+    """본부 설정 (API 키 포함). is_secret=True면 응답에서 마스킹.
+    DB 설정이 env 폴백보다 우선."""
+    __tablename__ = "settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(64), unique=True, nullable=False, index=True)
+    value = Column(Text, default="")
+    is_secret = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -5,6 +5,7 @@ API 관리 직원 (api_manager)
 - 모든 외부 API 호출은 이 모듈을 통해서만 나간다.
 - 다른 직원/부서는 provider 이름만 알고, 실제 키/시크릿/세션은 모른다.
 - 모든 호출은 ApiCall 테이블에 감사 기록이 남는다 (단, 키/토큰은 절대 저장 안 됨).
+- 키는 DB(Setting 테이블) 우선, 없으면 환경변수로 폴백.
 
 V1에서는 Mureka 한 곳만 연결. v1.5에서 텔레그램/Claude/Gemini 추가.
 """
@@ -15,7 +16,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import ApiCall
+from .models import ApiCall, Setting
 
 
 class ProviderError(Exception):
@@ -28,6 +29,17 @@ def _redact(d: dict) -> dict:
         return {}
     bad = {"authorization", "api_key", "token", "secret", "password", "key"}
     return {k: ("***" if k.lower() in bad else v) for k, v in d.items()}
+
+
+def _resolve_secret(db: Session, db_key: str, env_value: str) -> str:
+    """DB Setting → env 순으로 키 찾기."""
+    try:
+        row = db.query(Setting).filter_by(key=db_key).first()
+        if row and row.value:
+            return row.value
+    except Exception:
+        pass
+    return env_value or ""
 
 
 async def call_api(
@@ -50,7 +62,7 @@ async def call_api(
     # 라우팅: provider별 실제 호출
     try:
         if provider == "mureka":
-            result = await _call_mureka(operation, payload, settings, timeout)
+            result = await _call_mureka(db, operation, payload, settings, timeout)
         else:
             raise ProviderError(f"unknown provider: {provider}")
 
@@ -86,14 +98,15 @@ async def call_api(
 
 
 async def _call_mureka(
-    operation: str, payload: dict, settings, timeout: float
+    db: Session, operation: str, payload: dict, settings, timeout: float
 ) -> dict[str, Any]:
     """Mureka API 라우팅."""
-    if not settings.mureka_api_key:
-        return {"ok": False, "error": "MUREKA_API_KEY 미설정", "status_code": 0, "data": None}
+    api_key = _resolve_secret(db, "mureka_api_key", settings.mureka_api_key)
+    if not api_key:
+        return {"ok": False, "error": "Mureka API 키 미등록 — /dept/music 페이지에서 등록하세요", "status_code": 0, "data": None}
 
     headers = {
-        "Authorization": f"Bearer {settings.mureka_api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     base = settings.mureka_base_url.rstrip("/")

@@ -17,6 +17,7 @@ from sqlalchemy import desc
 from ..db import get_db
 from ..models import Job, Agent, AuditLog
 from ..api_manager import call_api
+from ..songwriter import compose_plan as songwriter_compose
 
 router = APIRouter(prefix="/api/music", tags=["music"])
 
@@ -25,6 +26,10 @@ class GenerateRequest(BaseModel):
     lyrics: str = Field(..., min_length=1, max_length=4000)
     style: str = Field(default="pop", max_length=200)
     title: str = Field(default="", max_length=200)
+
+
+class ComposePlanRequest(BaseModel):
+    issue: str = Field(..., min_length=1, max_length=1000)
 
 
 def _set_agent_status(db: Session, slug: str, status: str) -> None:
@@ -36,6 +41,21 @@ def _set_agent_status(db: Session, slug: str, status: str) -> None:
 
 def _audit(db: Session, action: str, target: str = "", detail: dict | None = None, actor: str = "music_producer") -> None:
     db.add(AuditLog(actor=actor, action=action, target=target, detail=detail or {}))
+
+
+# ── 작곡가 직원 ──────────────────────────────────────────
+@router.post("/compose-plan")
+def compose_plan_endpoint(req: ComposePlanRequest, db: Session = Depends(get_db)):
+    """작곡가 직원: 최근 이슈 → 제목/가사/스타일 기획안.
+    LLM 미사용(룰 기반 V1). 사용자가 결과를 수정한 뒤 generate에 전달."""
+    _set_agent_status(db, "songwriter", "기획 중")
+    plan = songwriter_compose(req.issue)
+    _audit(db, "music.compose_plan", target="songwriter",
+           detail={"issue_len": len(req.issue), "mood": plan["mood"], "keyword": plan["keyword"]},
+           actor="songwriter")
+    _set_agent_status(db, "songwriter", "대기")
+    db.commit()
+    return plan
 
 
 @router.post("/generate")

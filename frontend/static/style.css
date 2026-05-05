@@ -1,70 +1,89 @@
-/* ====================================================================
-   Lucky HQ — 픽셀 타이쿤 × CRT 터미널 미학
-   - 한국어 픽셀 폰트(DungGeunMo) + 본문 한글 가독 폰트(Pretendard)
-   - 부드러운 드롭섀도우 대신 stepped offset 그림자 (픽셀 감)
-   - 다크 네이비 + 클로버 골드/그린 액센트
-   ==================================================================== */
-
-@font-face {
-  font-family: 'DungGeunMo';
-  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/DungGeunMo.woff') format('woff');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
+/* ============================================================
+   Lucky HQ — 부드럽고 시원한 디자인 시스템
+   - 라이트 모드 + 차가운 시안 액센트
+   - Pretendard 본문, 라운드 12~16px, 부드러운 그림자
+   ============================================================ */
 
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css');
 
 :root {
   /* surface */
-  --bg-deep:        #0a0e1a;
-  --bg-surface:     #131a2c;
-  --bg-raised:      #1a2238;
-  --bg-elev:        #232c46;
+  --bg:           #f5f8fb;            /* 페이지 배경 */
+  --surface:      #ffffff;            /* 카드 배경 */
+  --surface-soft: #f1f5f9;            /* 서브 패널 */
+  --surface-tint: #ecfeff;            /* 액센트 톤 배경 */
 
   /* border */
-  --border:         #243049;
-  --border-strong:  #3a4a6e;
-  --border-glow:    #4d5f8a;
+  --border:        rgba(15, 23, 42, 0.06);
+  --border-strong: rgba(15, 23, 42, 0.10);
+  --border-focus:  #06b6d4;
 
   /* text */
-  --text:           #e8edf5;
-  --text-muted:     #8b94ad;
-  --text-dim:       #5a6480;
+  --text:        #0f172a;
+  --text-muted:  #475569;
+  --text-soft:   #64748b;
+  --text-dim:    #94a3b8;
 
-  /* accents */
-  --clover-gold:    #e0b84a;
-  --clover-green:   #4ade80;
-  --amber:          #f59e0b;
-  --crt-amber:      #ffb454;
-  --danger:         #ef4444;
-  --info:           #60a5fa;
+  /* accents — cool teal/cyan */
+  --accent:        #0891b2;   /* primary */
+  --accent-strong: #0e7490;
+  --accent-soft:   #ecfeff;
+  --accent-mid:    #67e8f9;
 
-  /* fonts */
-  --font-pixel:     'DungGeunMo', 'Press Start 2P', ui-monospace, monospace;
-  --font-body:      'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono:      ui-monospace, 'JetBrains Mono', 'Menlo', monospace;
+  /* status */
+  --ok:        #059669;
+  --ok-soft:   #ecfdf5;
+  --warn:      #d97706;
+  --warn-soft: #fffbeb;
+  --danger:    #dc2626;
+  --danger-soft: #fef2f2;
+  --info:      #2563eb;
+  --info-soft: #eff6ff;
+
+  /* radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+
+  /* shadow — 부드럽고 얕게 */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.06), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 16px 48px rgba(15, 23, 42, 0.08);
+
+  /* font */
+  --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Menlo', monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   height: 100%;
-  background: var(--bg-deep);
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.55;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
-
-  /* 미세한 스캔라인 + 그리드 */
-  background-image:
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px),
-    radial-gradient(ellipse at top, rgba(224, 184, 74, 0.04), transparent 60%);
 }
 
-a { color: var(--clover-gold); text-decoration: none; }
-a:hover { color: var(--crt-amber); }
+body::before {
+  /* 시원한 페이지 상단 그라데이션 — 부드러움 */
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 320px;
+  background: radial-gradient(ellipse at 30% 0%, rgba(103, 232, 249, 0.15), transparent 60%),
+              radial-gradient(ellipse at 80% 0%, rgba(186, 230, 253, 0.18), transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-strong); text-decoration: underline; }
 
 button {
   font-family: var(--font-body);
@@ -74,82 +93,157 @@ button {
   background: none;
   color: inherit;
 }
-
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 
-/* === 픽셀 박스: 본부 모든 패널의 기본 외피 === */
-.pixel-box {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-strong);
-  box-shadow:
-    0 0 0 1px var(--bg-deep),
-    4px 4px 0 0 var(--border);
-  border-radius: 2px;
+/* ============ Layout primitives ============ */
+
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 28px 20px 80px;
 }
 
-.pixel-box.tight { box-shadow: 0 0 0 1px var(--bg-deep), 2px 2px 0 0 var(--border); }
-
-/* === 픽셀 헤더 === */
-.pixel-h {
-  font-family: var(--font-pixel);
-  font-weight: normal;
-  letter-spacing: 0.02em;
-  color: var(--clover-gold);
-  text-transform: uppercase;
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
 }
 
-/* === 픽셀 버튼 === */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.015em;
+}
+.brand .clover { font-size: 22px; }
+
+.crumb {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px;
+  color: var(--text-soft);
+}
+.crumb a { color: var(--text-soft); }
+.crumb a:hover { color: var(--text); }
+.crumb .sep { color: var(--text-dim); }
+.crumb .here { color: var(--text); font-weight: 500; }
+
+.topbar .meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.topbar .meta .ind {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.topbar .meta .ind::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.topbar .meta .ind.ok::before   { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.topbar .meta .ind.fail::before { background: var(--danger); }
+
+/* ============ Card ============ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.card + .card { margin-top: 18px; }
+
+.card .card-head {
+  padding: 18px 22px 0;
+}
+.card .card-body {
+  padding: 18px 22px 22px;
+}
+.card.compact .card-head { padding: 14px 18px 0; }
+.card.compact .card-body { padding: 12px 18px 18px; }
+
+.card h2 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-bottom: 4px;
+}
+.card .desc {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0;
+}
+
+/* ============ Buttons ============ */
+
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 14px;
-  background: var(--bg-raised);
+  padding: 10px 16px;
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  box-shadow: 2px 2px 0 0 var(--border);
-  border-radius: 2px;
-  font-size: 13px;
-  transition: transform 0.04s ease, box-shadow 0.04s ease;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s ease;
 }
 .btn:hover:not(:disabled) {
-  border-color: var(--border-glow);
-  box-shadow: 2px 2px 0 0 var(--border-strong);
+  background: var(--surface-soft);
+  border-color: var(--text-dim);
 }
-.btn:active:not(:disabled) {
-  transform: translate(2px, 2px);
-  box-shadow: 0 0 0 0 var(--border);
-}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
 .btn-primary {
-  background: linear-gradient(180deg, #e0b84a, #b88e2a);
-  color: #1a1408;
-  border-color: #8a6a1f;
-  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
 
 .btn-ghost {
   background: transparent;
-  border-color: var(--border);
+  border-color: transparent;
+  color: var(--text-soft);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
-/* === 입력 === */
-.input, .textarea, .select {
-  width: 100%;
-  background: var(--bg-deep);
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-  padding: 10px 12px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  border-radius: 2px;
-  outline: none;
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger-soft);
+  background: var(--surface);
 }
-.input:focus, .textarea:focus, .select:focus {
-  border-color: var(--clover-gold);
-  box-shadow: 0 0 0 1px var(--clover-gold);
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
 }
-.textarea { min-height: 160px; resize: vertical; line-height: 1.6; }
+
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+
+/* ============ Inputs ============ */
 
 label.field {
   display: block;
@@ -157,49 +251,264 @@ label.field {
 }
 label.field > span {
   display: block;
-  font-family: var(--font-pixel);
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-muted);
   margin-bottom: 6px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+}
+label.field > small {
+  display: block;
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-top: 4px;
 }
 
-/* === 상태 배지 === */
+.input, .textarea, .select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  border-radius: var(--r-md);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input:focus, .textarea:focus, .select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
+}
+.textarea { min-height: 200px; resize: vertical; line-height: 1.7; font-family: var(--font-mono); font-size: 13px; }
+
+.input.mono { font-family: var(--font-mono); font-size: 13px; }
+
+/* ============ Badge ============ */
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+}
+.badge.ok    { background: var(--ok-soft);   color: var(--ok); }
+.badge.run   { background: var(--warn-soft); color: var(--warn); }
+.badge.fail  { background: var(--danger-soft); color: var(--danger); }
+.badge.info  { background: var(--info-soft);  color: var(--info); }
+.badge.tint  { background: var(--accent-soft); color: var(--accent-strong); }
+
+.badge .dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+}
+.badge.run .dot { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+/* ============ Agent / Department visual ============ */
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.agent-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.agent-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent-mid);
+}
+.agent-card .av {
+  width: 42px; height: 42px;
+  display: grid; place-items: center;
+  background: var(--surface-tint);
+  border-radius: 12px;
+  font-size: 22px;
+  flex: 0 0 auto;
+}
+.agent-card .info { min-width: 0; }
+.agent-card .name {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agent-card .status {
+  font-size: 12px; color: var(--text-soft);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 부서 큰 카드 (메인 콘솔에서 음악제작 1개만 보임) */
+.dept-card {
+  display: block;
+  text-decoration: none;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-tint) 280%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 26px 28px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+.dept-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent-mid);
+  text-decoration: none;
+}
+.dept-card .head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.dept-card .head h2 {
+  font-size: 22px; font-weight: 600; letter-spacing: -0.02em;
+  color: var(--text);
+}
+.dept-card .head .desc {
+  font-size: 14px; color: var(--text-soft); margin-top: 4px;
+}
+.dept-card .members {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  margin-top: 8px;
+}
+.dept-card .member {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.dept-card .member .av { font-size: 16px; }
+
+/* ============ Job (작업) ============ */
+
+.jobs { display: flex; flex-direction: column; gap: 10px; }
+
+.job {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.job .meta { min-width: 0; }
+.job .meta .title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job .meta .sub {
+  font-size: 12px; color: var(--text-soft); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job .id { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+.job .player {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.job .player audio { width: 100%; }
+.job .err {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+
+/* ============ Empty / hint ============ */
+.empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.hint { font-size: 12px; color: var(--text-soft); }
+.hint.ok    { color: var(--ok); }
+.hint.fail  { color: var(--danger); }
+
+/* ============ Toast ============ */
+.toast {
+  position: fixed;
+  bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--text);
+  color: var(--surface);
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  max-width: 460px;
+  text-align: center;
+  z-index: 999;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+/* ============ Settings (API 키) ============ */
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.settings-row:first-child { border-top: none; }
+.settings-row .key {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.settings-row .val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.settings-row .empty-val { color: var(--text-dim); font-style: italic; }
+
+/* ============ Plan preview (작곡 기획안) ============ */
+.plan-preview {
+  display: grid;
+  gap: 14px;
+}
+.plan-tag {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
-  padding: 2px 8px;
-  font-family: var(--font-pixel);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
-  text-transform: uppercase;
+  padding: 4px 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  border-radius: 999px;
+  font-weight: 500;
 }
-.badge.ok      { color: var(--clover-green); border-color: #2f6c46; background: rgba(74,222,128,0.08); }
-.badge.run     { color: var(--crt-amber);    border-color: #6c4f2a; background: rgba(245,158,11,0.08); }
-.badge.fail    { color: var(--danger);       border-color: #6c2a2a; background: rgba(239,68,68,0.08); }
-.badge.idle    { color: var(--text-dim);     border-color: var(--border); }
-.badge.piloting{ color: var(--info);         border-color: #2a4a6c; background: rgba(96,165,250,0.08); }
 
-/* === blink dot === */
-.dot {
-  display: inline-block;
-  width: 6px; height: 6px;
-  background: var(--clover-green);
-  border-radius: 1px;
-  animation: blink 1.4s steps(2) infinite;
+/* responsive */
+@media (max-width: 600px) {
+  .page { padding: 20px 14px 60px; }
+  .card .card-head, .card .card-body { padding-left: 16px; padding-right: 16px; }
+  .dept-card { padding: 22px 18px; }
+  .dept-card .head h2 { font-size: 19px; }
 }
-.dot.run    { background: var(--crt-amber); }
-.dot.fail   { background: var(--danger);    animation-duration: 0.7s; }
-.dot.idle   { background: var(--text-dim);  animation: none; }
-
-@keyframes blink { 50% { opacity: 0.2; } }
-
-/* === scrollbars === */
-*::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-track { background: var(--bg-deep); }
-*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
-*::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
