@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🍀 Lucky HQ</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header>
+  <h1>🍀 Lucky HQ</h1>
+  <div class="actions">
+    <button id="btn-refresh" title="새로고침">↻</button>
+    <button id="btn-new-agent" class="primary">+ 직원 추가</button>
+  </div>
+</header>
+
+<main class="panels">
+  <section class="panel left">
+    <h2>직원</h2>
+    <ul id="agent-list">
+      <li class="empty">불러오는 중…</li>
+    </ul>
+  </section>
+
+  <section class="panel center">
+    <h2>오피스</h2>
+    <div id="office">
+      <div class="placeholder">
+        <div class="big">🏢</div>
+        <div>픽셀 오피스 애니메이션은 V2에서 추가됩니다.<br/>
+        지금은 좌측 직원 카드의 ▶ 일하기 버튼을 눌러보세요.</div>
+      </div>
+      <div id="job-detail" hidden>
+        <h3 id="job-title"></h3>
+        <pre id="job-body"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel right">
+    <h2>로그</h2>
+    <ul id="log-list"></ul>
+  </section>
+</main>
+
+<dialog id="wizard">
+  <form method="dialog" id="wizard-form">
+    <h3>직원 추가 마법사</h3>
+
+    <div class="step" id="step-1">
+      <label>어떤 직원이 필요한가요? (자연어로 적어주세요)</label>
+      <textarea id="wizard-prompt"
+        placeholder="예: 매일 아침에 AI 관련 이슈 5개 찾아서 정리해주는 직원"></textarea>
+      <div class="row">
+        <button type="button" id="wizard-suggest" class="primary">추천 받기</button>
+        <button type="button" id="wizard-skip">직접 고를게요 →</button>
+      </div>
+      <pre id="wizard-suggestion" hidden></pre>
+    </div>
+
+    <div class="step" id="step-2" hidden>
+      <hr/>
+      <label>이름</label>
+      <input id="wizard-name" placeholder="예: 새벽 이슈 스카우트" />
+
+      <label>모듈 (직원 종류)</label>
+      <select id="wizard-module"></select>
+      <small id="wizard-module-desc" class="hint"></small>
+
+      <div id="wizard-config"></div>
+
+      <label>스케줄 (cron, 비워두면 수동 실행만)</label>
+      <input id="wizard-cron" placeholder="0 9 * * *  (매일 오전 9시)" />
+      <small class="hint">분 시 일 월 요일 — 비우면 ▶ 일하기 버튼으로만 실행</small>
+
+      <label>LLM 등급</label>
+      <select id="wizard-tier">
+        <option value="">(모듈 기본값)</option>
+        <option value="T0">T0 — 무료 (Groq/Gemini)</option>
+        <option value="T1">T1 — Haiku</option>
+        <option value="T2">T2 — Sonnet (글쓰기·전략용)</option>
+      </select>
+
+      <div class="row">
+        <button type="button" id="wizard-create" class="primary">생성</button>
+        <button type="button" id="wizard-back">← 뒤로</button>
+      </div>
+    </div>
+
+    <button type="button" id="wizard-close" class="close">닫기</button>
+  </form>
+</dialog>
+
+<script src="/static/wizard.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
