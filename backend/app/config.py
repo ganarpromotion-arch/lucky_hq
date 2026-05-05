@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     mureka_api_key: str = ""
     mureka_base_url: str = "https://api.mureka.ai"
 
+    anthropic_api_key: str = ""
+    anthropic_base_url: str = "https://api.anthropic.com"
+
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com"
+
+    # 작곡가 직원 — 가사 생성 LLM 모델
+    # claude-haiku-4-5-20251001 (빠르고 저렴) / claude-sonnet-4-6 (더 자연스러움)
+    songwriter_llm_provider: str = "anthropic"   # anthropic | openai
+    songwriter_llm_model: str = "claude-haiku-4-5-20251001"
+
     # 텔레그램 (v1.5에서 활성화 예정, 자리만 마련)
     telegram_bot_token: str = ""
     telegram_owner_chat_id: str = ""

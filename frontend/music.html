@@ -37,7 +37,7 @@
   <section class="card">
     <div class="card-head">
       <h2>API 키</h2>
-      <p class="desc">Mureka API 키. 등록 후엔 마스킹되어 표시됩니다.</p>
+      <p class="desc">등록 후엔 마스킹되어 표시됩니다. 키는 본부 DB에만 저장되고 다른 직원에겐 provider 이름만 노출.</p>
     </div>
     <div class="card-body">
       <div id="settings-list">
@@ -47,14 +47,23 @@
       <div class="divider"></div>
 
       <label class="field">
-        <span>Mureka API 키</span>
-        <input id="set-mureka" type="password" class="input mono" placeholder="(미등록) 새 키를 붙여넣고 저장">
-        <small>붙여넣은 값은 본부 DB에만 저장됩니다. 다른 직원에게는 provider 이름만 노출.</small>
+        <span>Mureka API 키 <small>(곡 생성)</small></span>
+        <input id="set-mureka" type="password" class="input mono" placeholder="새 키를 붙여넣고 저장">
+      </label>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
+        <button class="btn btn-primary btn-sm" data-save="mureka_api_key" data-input="set-mureka">저장</button>
+        <button class="btn btn-danger btn-sm" data-clear="mureka_api_key">삭제</button>
+        <span class="hint" id="hint-mureka_api_key"></span>
+      </div>
+
+      <label class="field">
+        <span>Anthropic API 키 <small>(작곡가가 가사 작성에 사용)</small></span>
+        <input id="set-anthropic" type="password" class="input mono" placeholder="env(Railway)에 이미 있으면 비워둬도 OK">
       </label>
       <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn btn-primary btn-sm" id="btn-save-mureka">저장</button>
-        <button class="btn btn-danger btn-sm" id="btn-clear-mureka">삭제</button>
-        <span class="hint" id="settings-hint"></span>
+        <button class="btn btn-primary btn-sm" data-save="anthropic_api_key" data-input="set-anthropic">저장</button>
+        <button class="btn btn-danger btn-sm" data-clear="anthropic_api_key">삭제</button>
+        <span class="hint" id="hint-anthropic_api_key"></span>
       </div>
     </div>
   </section>
@@ -84,7 +93,8 @@
       <p class="desc">제목·가사·스타일을 확인하고 [작곡 시작]을 누르면 음악 프로듀서가 Mureka에 의뢰합니다.</p>
     </div>
     <div class="card-body">
-      <div id="plan-tags" style="margin-bottom: 14px; display:none;">
+      <div id="plan-tags" style="margin-bottom: 14px; display:none; gap:8px; flex-wrap:wrap;">
+        <span class="plan-tag" id="plan-tag-source">source</span>
         <span class="plan-tag" id="plan-tag-mood">mood</span>
         <span class="plan-tag" id="plan-tag-keyword">keyword</span>
       </div>

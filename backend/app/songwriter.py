@@ -2,17 +2,25 @@
 작곡가 직원 (songwriter)
 
 입력: 최근 이슈 (자유 형식 한국어 텍스트)
-출력: 제목 / 가사 / 스타일
+출력: 제목 / 가사 / 스타일 / 무드 / 키워드
 
-V1: 룰 기반 휴리스틱
-- 이슈 키워드 매칭으로 무드/스타일 결정
-- 무드별 가사 템플릿 채우기 (한글 조사 자동 매칭)
-- 제목은 이슈 핵심 단어 + 무드 키워드 조합
+V1.2:
+- 우선 LLM(Anthropic Claude 기본, OpenAI 폴백)으로 가사 기획
+- LLM 실패 시 룰 기반 휴리스틱으로 폴백 (조사 자동 매칭 포함)
+- LLM은 항상 api_manager.call_api()를 통해서만 호출
 
-V1.5에서 LLM(Haiku)으로 확장 예정.
+설정:
+- 모델: settings.songwriter_llm_model (기본 claude-haiku-4-5-20251001)
+- provider: settings.songwriter_llm_provider (anthropic | openai)
 """
 from __future__ import annotations
+import json
 import re
+from typing import Optional
+from sqlalchemy.orm import Session
+
+from .api_manager import call_api
+from .config import get_settings
 
 
 def _has_jongseong(ch: str) -> bool:
@@ -384,8 +392,8 @@ def _extract_keyword(text: str) -> str:
     return kw
 
 
-def compose_plan(issue: str) -> dict:
-    """이슈 텍스트 → {title, lyrics, style, mood}"""
+def compose_plan_rule(issue: str) -> dict:
+    """룰 기반 기획 (LLM 폴백용)."""
     issue = (issue or "").strip()
     preset = _pick_preset(issue)
     mood = preset["mood"]
@@ -396,7 +404,7 @@ def compose_plan(issue: str) -> dict:
     lyrics = template.replace("{topic}", keyword)
     lyrics = _apply_josa(lyrics)
 
-    # 제목: 무드별 패턴 첫 번째 사용 (V1: 결정적; 시드 변동성은 v1.5에서)
+    # 제목: 무드별 패턴 첫 번째 사용
     title_patterns = TITLE_PATTERNS.get(mood, TITLE_PATTERNS["modern"])
     title = title_patterns[0].replace("{kw}", keyword)
 
@@ -406,4 +414,174 @@ def compose_plan(issue: str) -> dict:
         "style": preset["style"],
         "mood": mood,
         "keyword": keyword,
+        "source": "rule",
     }
+
+
+# ── LLM 작곡가 ────────────────────────────────────────────────────
+SYSTEM_PROMPT = """너는 한국 K-POP/인디 음악 분야의 작곡가야.
+사용자가 주는 '최근 이슈' 한 줄을 받아 그 이슈의 무드를 살린 한국어 곡을 기획한다.
+
+규칙:
+- 가사는 자연스러운 한국어. 조사(을/를, 이/가, 은/는, 와/과)를 정확히 사용.
+- 구조는 [Verse 1] / [Chorus] / [Verse 2] / [Chorus] 4단계.
+- 각 섹션은 4행 정도. 너무 길게 쓰지 마.
+- 제목은 한국어 8자 이내, 너무 직접적이지 않게.
+- 스타일은 영문 키워드 한 줄 (장르 + BPM + 보컬 톤). 예: "city pop, female vocal, 92 BPM, autumn vibes".
+
+출력은 반드시 아래 JSON 한 덩어리만. 설명 텍스트, 코드펜스(```) 모두 금지.
+{
+  "title": "곡 제목",
+  "style": "영문 스타일 키워드",
+  "lyrics": "[Verse 1]\\n...\\n\\n[Chorus]\\n...\\n\\n[Verse 2]\\n...\\n\\n[Chorus]\\n...",
+  "mood": "warm|bright|cold|fresh|emotional|energetic|cozy|calm|dreamy|playful|modern 중 하나",
+  "keyword": "핵심 키워드 한 단어"
+}"""
+
+
+def _strip_code_fence(text: str) -> str:
+    """```json ... ``` 같은 코드펜스 제거."""
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
+    return text.strip()
+
+
+def _extract_json_block(text: str) -> Optional[str]:
+    """텍스트에서 첫 JSON 객체 블록 추출 (LLM이 앞뒤 잡담 섞을 때 대비)."""
+    text = _strip_code_fence(text)
+    # 가장 바깥 { ... } 찾기
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                return text[start : i + 1]
+    return None
+
+
+async def _llm_compose_anthropic(db: Session, issue: str, model: str) -> Optional[dict]:
+    """Anthropic Claude로 가사 기획. 실패 시 None."""
+    payload = {
+        "model": model,
+        "max_tokens": 1500,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": f"이슈: {issue}"}],
+    }
+    result = await call_api(
+        db, provider="anthropic", operation="messages",
+        payload=payload, requester="songwriter", timeout=45.0,
+    )
+    if not result.get("ok"):
+        return None
+    data = result.get("data") or {}
+    content = data.get("content") or []
+    if not content:
+        return None
+    # content blocks 중 첫 text 블록
+    text = ""
+    for block in content:
+        if block.get("type") == "text":
+            text = block.get("text", "")
+            break
+    if not text:
+        return None
+    return _parse_plan_json(text)
+
+
+async def _llm_compose_openai(db: Session, issue: str, model: str) -> Optional[dict]:
+    """OpenAI ChatCompletions로 가사 기획. 실패 시 None."""
+    payload = {
+        "model": model,
+        "max_tokens": 1500,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"이슈: {issue}"},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    result = await call_api(
+        db, provider="openai", operation="chat",
+        payload=payload, requester="songwriter", timeout=45.0,
+    )
+    if not result.get("ok"):
+        return None
+    data = result.get("data") or {}
+    choices = data.get("choices") or []
+    if not choices:
+        return None
+    text = ((choices[0] or {}).get("message") or {}).get("content", "")
+    if not text:
+        return None
+    return _parse_plan_json(text)
+
+
+def _parse_plan_json(text: str) -> Optional[dict]:
+    """LLM 응답 텍스트에서 JSON 추출 + 검증 + 정규화."""
+    block = _extract_json_block(text)
+    if not block:
+        return None
+    try:
+        obj = json.loads(block)
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    title = (obj.get("title") or "").strip()
+    style = (obj.get("style") or "").strip()
+    lyrics = (obj.get("lyrics") or "").strip()
+    if not (title and lyrics):
+        return None
+    mood = (obj.get("mood") or "modern").strip().lower()
+    if mood not in LYRIC_TEMPLATES:
+        mood = "modern"
+    keyword = (obj.get("keyword") or "").strip() or _extract_keyword(lyrics[:30])
+    return {
+        "title": title,
+        "lyrics": lyrics,
+        "style": style or "K-pop, modern production, 100 BPM",
+        "mood": mood,
+        "keyword": keyword,
+        "source": "llm",
+    }
+
+
+async def compose_plan(issue: str, db: Optional[Session] = None) -> dict:
+    """이슈 → 기획안.
+    1) LLM (Anthropic 기본 / OpenAI 폴백)
+    2) 룰 기반 (LLM 실패 또는 db=None)"""
+    issue = (issue or "").strip()
+    if not issue:
+        return compose_plan_rule(issue)
+
+    if db is None:
+        return compose_plan_rule(issue)
+
+    settings = get_settings()
+    provider = (settings.songwriter_llm_provider or "anthropic").lower()
+    model = settings.songwriter_llm_model
+
+    # 1차: 설정된 provider
+    plan = None
+    if provider == "anthropic":
+        plan = await _llm_compose_anthropic(db, issue, model)
+        if plan is None:
+            # 2차 폴백: openai (있으면)
+            plan = await _llm_compose_openai(db, issue, "gpt-4o-mini")
+    elif provider == "openai":
+        plan = await _llm_compose_openai(db, issue, model)
+        if plan is None:
+            plan = await _llm_compose_anthropic(db, issue, "claude-haiku-4-5-20251001")
+
+    if plan:
+        return plan
+
+    # 3차 폴백: 룰 기반
+    out = compose_plan_rule(issue)
+    out["source"] = "rule_fallback"
+    return out

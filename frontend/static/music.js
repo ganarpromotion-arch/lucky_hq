@@ -78,41 +78,48 @@ async function loadAgents() {
 }
 
 // ─────────────────────────────────────────────────
-// API 키 (Setting)
+// API 키 (Setting) — 일반화: data-save / data-clear 속성으로 처리
 // ─────────────────────────────────────────────────
+const SECRET_LABELS = {
+  mureka_api_key: 'Mureka',
+  anthropic_api_key: 'Anthropic',
+  openai_api_key: 'OpenAI',
+};
+
 async function loadSettings() {
   try {
     const list = await fetchJSON('/api/settings');
     const wrap = $('#settings-list');
     if (!list.length) {
-      wrap.innerHTML = '<div class="empty">아직 등록된 키가 없습니다.</div>';
+      wrap.innerHTML = '<div class="empty">아직 등록된 키가 없습니다. (env에 있으면 자동 사용됨)</div>';
       return;
     }
-    wrap.innerHTML = list.map(s => `
-      <div class="settings-row">
-        <div>
-          <div class="key">${s.key}</div>
-          <div class="val ${s.has_value ? '' : 'empty-val'}">${s.has_value ? s.value : '(미등록)'}</div>
+    wrap.innerHTML = list.map(s => {
+      const label = SECRET_LABELS[s.key] || s.key;
+      return `
+        <div class="settings-row">
+          <div>
+            <div class="key">${label} <small style="color: var(--text-dim);">${s.key}</small></div>
+            <div class="val ${s.has_value ? '' : 'empty-val'}">${s.has_value ? s.value : '(미등록)'}</div>
+          </div>
+          <span class="badge ${s.has_value ? 'ok' : ''}">${s.has_value ? '등록됨' : '미등록'}</span>
         </div>
-        <span class="badge ${s.has_value ? 'ok' : ''}">${s.has_value ? '등록됨' : '미등록'}</span>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch (e) { /* 무시 */ }
 }
 
-async function onSaveMureka() {
-  const v = $('#set-mureka').value.trim();
-  const hint = $('#settings-hint');
-  if (!v) {
-    hint.textContent = '값을 입력해주세요'; hint.className = 'hint fail';
-    return;
-  }
+async function saveSecret(key, inputId) {
+  const input = document.getElementById(inputId);
+  const v = input.value.trim();
+  const hint = document.getElementById(`hint-${key}`);
+  if (!v) { hint.textContent = '값을 입력해주세요'; hint.className = 'hint fail'; return; }
   try {
-    await fetchJSON('/api/settings/mureka_api_key', {
+    await fetchJSON(`/api/settings/${key}`, {
       method: 'PUT',
       body: JSON.stringify({ value: v, is_secret: true }),
     });
-    $('#set-mureka').value = '';
+    input.value = '';
     hint.textContent = '✓ 저장됨'; hint.className = 'hint ok';
     await loadSettings();
   } catch (e) {
@@ -120,11 +127,11 @@ async function onSaveMureka() {
   }
 }
 
-async function onClearMureka() {
-  if (!confirm('Mureka API 키를 삭제할까요?')) return;
-  const hint = $('#settings-hint');
+async function clearSecret(key) {
+  if (!confirm(`${SECRET_LABELS[key] || key} 키를 삭제할까요? (env에 키가 있으면 그게 자동 사용됨)`)) return;
+  const hint = document.getElementById(`hint-${key}`);
   try {
-    await fetchJSON('/api/settings/mureka_api_key', { method: 'DELETE' });
+    await fetchJSON(`/api/settings/${key}`, { method: 'DELETE' });
     hint.textContent = '✓ 삭제됨'; hint.className = 'hint ok';
     await loadSettings();
   } catch (e) {
@@ -145,7 +152,9 @@ async function onComposePlan() {
   const btn = $('#btn-plan');
   btn.disabled = true;
   const orig = btn.textContent;
-  btn.textContent = '기획 중…';
+  btn.textContent = '작곡가 생각 중…';
+  hint.textContent = '작곡가가 LLM으로 가사를 작성 중 (10~25초 소요)';
+  hint.className = 'hint';
   try {
     const plan = await fetchJSON('/api/music/compose-plan', {
       method: 'POST',
@@ -154,10 +163,20 @@ async function onComposePlan() {
     $('#f-title').value  = plan.title || '';
     $('#f-style').value  = plan.style || '';
     $('#f-lyrics').value = plan.lyrics || '';
+    const sourceLabel = {
+      llm: '🤖 LLM 작성',
+      rule: '📋 룰 기반',
+      rule_fallback: '📋 룰 기반 (LLM 실패)',
+    }[plan.source] || plan.source || '-';
+    $('#plan-tag-source').textContent  = sourceLabel;
     $('#plan-tag-mood').textContent    = `mood: ${plan.mood || '-'}`;
     $('#plan-tag-keyword').textContent = `keyword: ${plan.keyword || '-'}`;
     $('#plan-tags').style.display = 'flex';
-    hint.textContent = '✓ 아래에 채웠습니다. 자유롭게 수정 후 [작곡 시작]'; hint.className = 'hint ok';
+    if (plan.source === 'rule_fallback') {
+      hint.textContent = '⚠ LLM 실패 → 룰 기반으로 작성됨. ANTHROPIC_API_KEY 확인하세요'; hint.className = 'hint fail';
+    } else {
+      hint.textContent = '✓ 아래에 채웠습니다. 자유롭게 수정 후 [작곡 시작]'; hint.className = 'hint ok';
+    }
   } catch (e) {
     hint.textContent = '✗ ' + e.message; hint.className = 'hint fail';
   } finally {
@@ -250,8 +269,14 @@ async function onGenerate() {
 (function main() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
-  $('#btn-save-mureka').addEventListener('click', onSaveMureka);
-  $('#btn-clear-mureka').addEventListener('click', onClearMureka);
+
+  // API 키 저장/삭제 버튼 일반화
+  document.querySelectorAll('[data-save]').forEach(btn => {
+    btn.addEventListener('click', () => saveSecret(btn.dataset.save, btn.dataset.input));
+  });
+  document.querySelectorAll('[data-clear]').forEach(btn => {
+    btn.addEventListener('click', () => clearSecret(btn.dataset.clear));
+  });
 
   loadAgents();
   loadSettings();

@@ -63,6 +63,10 @@ async def call_api(
     try:
         if provider == "mureka":
             result = await _call_mureka(db, operation, payload, settings, timeout)
+        elif provider == "anthropic":
+            result = await _call_anthropic(db, operation, payload, settings, timeout)
+        elif provider == "openai":
+            result = await _call_openai(db, operation, payload, settings, timeout)
         else:
             raise ProviderError(f"unknown provider: {provider}")
 
@@ -133,4 +137,75 @@ async def _call_mureka(
         "status_code": r.status_code,
         "data": data,
         "error": "" if r.is_success else f"HTTP {r.status_code}",
+    }
+
+
+async def _call_anthropic(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """Anthropic Claude Messages API.
+
+    operation:
+      - "messages"  : POST /v1/messages
+    """
+    api_key = _resolve_secret(db, "anthropic_api_key", settings.anthropic_api_key)
+    if not api_key:
+        return {"ok": False, "error": "Anthropic API 키 미설정 (env ANTHROPIC_API_KEY)", "status_code": 0, "data": None}
+
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    base = settings.anthropic_base_url.rstrip("/")
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if operation == "messages":
+            r = await client.post(f"{base}/v1/messages", headers=headers, json=payload)
+        else:
+            return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:500]}
+
+    return {
+        "ok": r.is_success,
+        "status_code": r.status_code,
+        "data": data,
+        "error": "" if r.is_success else f"HTTP {r.status_code}: {str(data)[:200]}",
+    }
+
+
+async def _call_openai(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """OpenAI Chat Completions (폴백용)."""
+    api_key = _resolve_secret(db, "openai_api_key", settings.openai_api_key)
+    if not api_key:
+        return {"ok": False, "error": "OpenAI API 키 미설정", "status_code": 0, "data": None}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    base = settings.openai_base_url.rstrip("/")
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if operation == "chat":
+            r = await client.post(f"{base}/v1/chat/completions", headers=headers, json=payload)
+        else:
+            return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:500]}
+
+    return {
+        "ok": r.is_success,
+        "status_code": r.status_code,
+        "data": data,
+        "error": "" if r.is_success else f"HTTP {r.status_code}: {str(data)[:200]}",
     }
