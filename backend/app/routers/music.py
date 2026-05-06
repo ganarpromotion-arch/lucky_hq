@@ -98,7 +98,12 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     db.commit()
 
     # 2) API 관리 직원 통해 Mureka 호출
-    payload = {"lyrics": req.lyrics, "style": req.style, "title": req.title}
+    # Mureka 스펙: lyrics + prompt(스타일) + model. title은 Mureka가 받지 않으니 우리 DB에만 보관.
+    payload = {
+        "lyrics": req.lyrics,
+        "prompt": req.style,
+        "model": "auto",
+    }
     result = await call_api(
         db, provider="mureka", operation="generate",
         payload=payload, requester="music_producer",
@@ -108,7 +113,7 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     job = db.get(Job, job.id)
     if result.get("ok"):
         data = result.get("data") or {}
-        # Mureka 응답 형태가 확정되지 않았으니 후보 키들을 모두 탐색
+        # Mureka 응답: id 필드 (문자열). trace_id 도 같이 옴.
         ext_id = data.get("id") or data.get("task_id") or data.get("song_id")
         job.external_id = str(ext_id) if ext_id else None
         job.status = "running"
@@ -152,19 +157,20 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
         if result.get("ok"):
             data = result.get("data") or {}
             mstatus = (data.get("status") or "").lower()
-            # Mureka 상태 매핑 (확정 전: 가능한 후보 다수 처리)
-            if mstatus in {"succeeded", "success", "done", "completed"}:
+            # Mureka 상태: preparing / queued / running / streaming → 진행 중
+            #              succeeded → 완료, failed / timeouted / cancelled → 실패
+            if mstatus == "succeeded":
                 job.status = "done"
                 job.output = data
                 _set_agent_status(db, "music_producer", "대기")
                 _audit(db, "music.generate.done", target=f"job:{job.id}")
-            elif mstatus in {"failed", "error"}:
+            elif mstatus in {"failed", "error", "timeouted", "cancelled"}:
                 job.status = "failed"
-                job.error = str(data.get("error") or data.get("message") or "mureka 실패")
+                job.error = str(data.get("failed_reason") or data.get("error") or data.get("message") or f"mureka {mstatus or '실패'}")
                 _set_agent_status(db, "music_producer", "대기")
                 _audit(db, "music.generate.failed", target=f"job:{job.id}", detail={"error": job.error})
             else:
-                # 아직 진행 중: 출력만 갱신
+                # 아직 진행 중 (preparing/queued/running/streaming): 출력만 갱신
                 job.output = data
         db.commit()
 
@@ -173,13 +179,19 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
 
 def _serialize_job(j: Job) -> dict:
     out = j.output or {}
-    # 결과 오디오 URL 추출 (Mureka 응답 후보 키)
-    audio_url = (
-        out.get("audio_url")
-        or out.get("url")
-        or (out.get("song") or {}).get("audio_url")
-        or (out.get("data") or {}).get("audio_url")
-    )
+    # Mureka 응답: choices[0].url 이 mp3, choices[0].flac_url 이 flac (~30일 유효)
+    choices = out.get("choices") or []
+    audio_url = None
+    if isinstance(choices, list) and choices:
+        first = choices[0] if isinstance(choices[0], dict) else {}
+        audio_url = first.get("url") or first.get("flac_url") or first.get("audio_url")
+    if not audio_url:
+        # 구버전/다른 형식 폴백
+        audio_url = (
+            out.get("audio_url")
+            or out.get("url")
+            or (out.get("song") or {}).get("audio_url")
+        )
     return {
         "id": j.id,
         "kind": j.kind,
