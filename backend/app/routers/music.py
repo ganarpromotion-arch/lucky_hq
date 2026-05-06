@@ -158,6 +158,36 @@ def list_jobs(limit: int = 20, db: Session = Depends(get_db)):
     return [_serialize_job(j) for j in rows]
 
 
+@router.post("/jobs/{job_id}/refresh")
+async def refresh_job(job_id: int, db: Session = Depends(get_db)):
+    """완료된 곡인데 audio가 안 보일 때 Mureka에 강제 재조회.
+    상태에 관계없이 external_id로 query 한 번 더 돌리고 output을 덮어쓴다."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+    if not job.external_id:
+        raise HTTPException(400, "external_id 없음 — Mureka에 제출된 적이 없는 곡")
+
+    result = await call_api(
+        db, provider="mureka", operation="query",
+        payload={"id": job.external_id}, requester="music_producer",
+    )
+    if result.get("ok"):
+        data = result.get("data") or {}
+        mstatus = (data.get("status") or "").lower()
+        job.output = data
+        if mstatus == "succeeded":
+            job.status = "done"
+        elif mstatus in {"failed", "error", "timeouted", "cancelled"}:
+            job.status = "failed"
+            job.error = str(data.get("failed_reason") or data.get("error") or data.get("message") or f"mureka {mstatus}")
+    else:
+        # 응답이 실패해도 raw 에러는 노출
+        job.error = result.get("error", "")
+    db.commit()
+    return _serialize_job(job)
+
+
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
@@ -195,13 +225,25 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
 
 def _serialize_job(j: Job) -> dict:
     out = j.output or {}
-    # Mureka 응답: choices[0].url 이 mp3, choices[0].flac_url 이 flac (~30일 유효)
-    choices = out.get("choices") or []
-    audio_url = None
-    if isinstance(choices, list) and choices:
-        first = choices[0] if isinstance(choices[0], dict) else {}
-        audio_url = first.get("url") or first.get("flac_url") or first.get("audio_url")
-    if not audio_url:
+    # Mureka는 보통 2개 버전을 choices[]로 돌려준다 (mp3 url + flac_url, ~30일 유효)
+    choices = out.get("choices") if isinstance(out, dict) else None
+    audio_urls: list[dict] = []
+    if isinstance(choices, list):
+        for i, c in enumerate(choices):
+            if not isinstance(c, dict):
+                continue
+            url = c.get("url") or c.get("audio_url")
+            flac = c.get("flac_url")
+            if url or flac:
+                audio_urls.append({
+                    "index": i,
+                    "url": url,
+                    "flac_url": flac,
+                    "duration_ms": c.get("duration"),
+                })
+    # 첫 번째 url (구 호환)
+    audio_url = audio_urls[0]["url"] if audio_urls else None
+    if not audio_url and isinstance(out, dict):
         # 구버전/다른 형식 폴백
         audio_url = (
             out.get("audio_url")
@@ -216,6 +258,8 @@ def _serialize_job(j: Job) -> dict:
         "external_id": j.external_id,
         "input": j.input or {},
         "audio_url": audio_url,
+        "audio_urls": audio_urls,
+        "output": out if isinstance(out, dict) else {},
         "error": j.error or "",
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,

@@ -190,8 +190,24 @@ function renderJobs(jobs) {
   wrap.innerHTML = jobs.map(j => {
     const title = (j.input && j.input.title) || `곡 #${j.id}`;
     const style = (j.input && j.input.style) || '';
-    const audio = j.audio_url
-      ? `<div class="player"><audio controls preload="none" src="${j.audio_url}"></audio></div>`
+    const variants = Array.isArray(j.audio_urls) ? j.audio_urls : [];
+    const players = variants.length
+      ? variants.map((v, i) => `
+          <div class="player" style="margin-top:8px;">
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">버전 ${i + 1}${v.duration_ms ? ` · ${Math.round(v.duration_ms / 1000)}초` : ''}</div>
+            <audio controls preload="none" src="${v.url}"></audio>
+            ${v.url ? `<a class="btn btn-sm" href="${v.url}" download style="margin-left:6px;">⬇ mp3</a>` : ''}
+            ${v.flac_url ? `<a class="btn btn-sm" href="${v.flac_url}" download style="margin-left:4px;">⬇ flac</a>` : ''}
+          </div>`).join('')
+      : (j.audio_url
+          ? `<div class="player"><audio controls preload="none" src="${j.audio_url}"></audio></div>`
+          : '');
+    const showRefresh = j.status === 'done' && !variants.length && !j.audio_url;
+    const refreshBtn = (j.status === 'done' || j.status === 'failed') && j.external_id
+      ? `<button class="btn btn-sm js-refresh" data-id="${j.id}" style="margin-top:6px;">🔄 Mureka에서 다시 가져오기</button>`
+      : '';
+    const stuckHint = showRefresh
+      ? `<div class="hint" style="margin-top:6px;">완료됐는데 오디오가 안 보이면 위 버튼을 눌러보세요</div>`
       : '';
     const err = j.status === 'failed'
       ? `<div class="err">에러: ${j.error || '알 수 없음'}</div>`
@@ -204,11 +220,31 @@ function renderJobs(jobs) {
           <div class="sub">${style ? style + ' · ' : ''}${fmtTime(j.created_at)}</div>
         </div>
         <div class="id">#${j.id}</div>
-        ${audio}
+        ${players}
+        ${refreshBtn}
+        ${stuckHint}
         ${err}
       </div>
     `;
   }).join('');
+
+  wrap.querySelectorAll('.js-refresh').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '가져오는 중…';
+      try {
+        await fetchJSON(`/api/music/jobs/${id}/refresh`, { method: 'POST' });
+        await refreshJobs();
+      } catch (e) {
+        showToast('✗ ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
+  });
 }
 
 let polling = null;
