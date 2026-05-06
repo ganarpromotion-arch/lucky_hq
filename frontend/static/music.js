@@ -78,65 +78,29 @@ async function loadAgents() {
 }
 
 // ─────────────────────────────────────────────────
-// API 키 (Setting) — 일반화: data-save / data-clear 속성으로 처리
+// API 키 — 음악부서 미니 표시 (관리는 /secrets)
 // ─────────────────────────────────────────────────
-const SECRET_LABELS = {
-  mureka_api_key: 'Mureka',
-  anthropic_api_key: 'Anthropic',
-  openai_api_key: 'OpenAI',
-};
+const MUSIC_DEPT_KEYS = ['mureka_api_key', 'anthropic_api_key'];
 
 async function loadSettings() {
   try {
-    const list = await fetchJSON('/api/settings');
-    const wrap = $('#settings-list');
-    if (!list.length) {
-      wrap.innerHTML = '<div class="empty">아직 등록된 키가 없습니다. (env에 있으면 자동 사용됨)</div>';
+    const items = await fetchJSON('/api/settings/catalog');
+    const filtered = items.filter(i => MUSIC_DEPT_KEYS.includes(i.key));
+    const wrap = $('#api-mini-list');
+    if (!filtered.length) {
+      wrap.innerHTML = '<div class="empty">관련 API가 없습니다.</div>';
       return;
     }
-    wrap.innerHTML = list.map(s => {
-      const label = SECRET_LABELS[s.key] || s.key;
-      return `
-        <div class="settings-row">
-          <div>
-            <div class="key">${label} <small style="color: var(--text-dim);">${s.key}</small></div>
-            <div class="val ${s.has_value ? '' : 'empty-val'}">${s.has_value ? s.value : '(미등록)'}</div>
-          </div>
-          <span class="badge ${s.has_value ? 'ok' : ''}">${s.has_value ? '등록됨' : '미등록'}</span>
+    wrap.innerHTML = filtered.map(s => `
+      <div class="api-mini">
+        <div class="info">
+          <span class="label">${s.label}</span>
+          <span class="val">${s.has_value ? s.value : '(미등록)'}</span>
         </div>
-      `;
-    }).join('');
+        <span class="badge ${s.has_value ? 'ok' : ''}">${s.has_value ? '등록됨' : '미등록'}</span>
+      </div>
+    `).join('');
   } catch (e) { /* 무시 */ }
-}
-
-async function saveSecret(key, inputId) {
-  const input = document.getElementById(inputId);
-  const v = input.value.trim();
-  const hint = document.getElementById(`hint-${key}`);
-  if (!v) { hint.textContent = '값을 입력해주세요'; hint.className = 'hint fail'; return; }
-  try {
-    await fetchJSON(`/api/settings/${key}`, {
-      method: 'PUT',
-      body: JSON.stringify({ value: v, is_secret: true }),
-    });
-    input.value = '';
-    hint.textContent = '✓ 저장됨'; hint.className = 'hint ok';
-    await loadSettings();
-  } catch (e) {
-    hint.textContent = '✗ ' + e.message; hint.className = 'hint fail';
-  }
-}
-
-async function clearSecret(key) {
-  if (!confirm(`${SECRET_LABELS[key] || key} 키를 삭제할까요? (env에 키가 있으면 그게 자동 사용됨)`)) return;
-  const hint = document.getElementById(`hint-${key}`);
-  try {
-    await fetchJSON(`/api/settings/${key}`, { method: 'DELETE' });
-    hint.textContent = '✓ 삭제됨'; hint.className = 'hint ok';
-    await loadSettings();
-  } catch (e) {
-    hint.textContent = '✗ ' + e.message; hint.className = 'hint fail';
-  }
 }
 
 // ─────────────────────────────────────────────────
@@ -270,17 +234,10 @@ async function onGenerate() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
 
-  // API 키 저장/삭제 버튼 일반화
-  document.querySelectorAll('[data-save]').forEach(btn => {
-    btn.addEventListener('click', () => saveSecret(btn.dataset.save, btn.dataset.input));
-  });
-  document.querySelectorAll('[data-clear]').forEach(btn => {
-    btn.addEventListener('click', () => clearSecret(btn.dataset.clear));
-  });
-
   loadAgents();
   loadSettings();
   refreshJobs();
   setInterval(loadAgents, 8000);
+  setInterval(loadSettings, 12000);
   setInterval(refreshJobs, 5000);
 })();

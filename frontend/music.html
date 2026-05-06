@@ -33,37 +33,18 @@
     </div>
   </section>
 
-  <!-- API 키 -->
-  <section class="card">
-    <div class="card-head">
-      <h2>API 키</h2>
-      <p class="desc">등록 후엔 마스킹되어 표시됩니다. 키는 본부 DB에만 저장되고 다른 직원에겐 provider 이름만 노출.</p>
+  <!-- API 키 (요약) -->
+  <section class="card compact">
+    <div class="card-head" style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <h2>API 키</h2>
+        <p class="desc">이 부서가 사용하는 외부 API 상태입니다.</p>
+      </div>
+      <a class="btn btn-sm" href="/secrets">관리 →</a>
     </div>
     <div class="card-body">
-      <div id="settings-list">
+      <div id="api-mini-list">
         <div class="empty">불러오는 중…</div>
-      </div>
-
-      <div class="divider"></div>
-
-      <label class="field">
-        <span>Mureka API 키 <small>(곡 생성)</small></span>
-        <input id="set-mureka" type="password" class="input mono" placeholder="새 키를 붙여넣고 저장">
-      </label>
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
-        <button class="btn btn-primary btn-sm" data-save="mureka_api_key" data-input="set-mureka">저장</button>
-        <button class="btn btn-danger btn-sm" data-clear="mureka_api_key">삭제</button>
-        <span class="hint" id="hint-mureka_api_key"></span>
-      </div>
-
-      <label class="field">
-        <span>Anthropic API 키 <small>(작곡가가 가사 작성에 사용)</small></span>
-        <input id="set-anthropic" type="password" class="input mono" placeholder="env(Railway)에 이미 있으면 비워둬도 OK">
-      </label>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn btn-primary btn-sm" data-save="anthropic_api_key" data-input="set-anthropic">저장</button>
-        <button class="btn btn-danger btn-sm" data-clear="anthropic_api_key">삭제</button>
-        <span class="hint" id="hint-anthropic_api_key"></span>
       </div>
     </div>
   </section>

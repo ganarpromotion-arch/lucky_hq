@@ -69,6 +69,19 @@ async def compose_plan_endpoint(req: ComposePlanRequest, db: Session = Depends(g
 
 @router.post("/generate")
 async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
+    # 동시 호출 보호 — 진행 중인 곡이 있으면 거부 (429 폭탄 방지)
+    busy = (
+        db.query(Job)
+        .filter(Job.department_slug == "music",
+                Job.status.in_(("pending", "running")))
+        .first()
+    )
+    if busy:
+        raise HTTPException(
+            status_code=409,
+            detail=f"이미 진행 중인 곡이 있습니다 (#{busy.id}). 완료 후 다시 시도해주세요."
+        )
+
     # 1) Job 생성
     job = Job(
         kind="music_generate",

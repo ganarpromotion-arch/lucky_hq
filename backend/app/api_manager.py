@@ -132,11 +132,34 @@ async def _call_mureka(
     except Exception:
         data = {"raw": r.text[:500]}
 
+    # 친절한 에러 메시지 — Mureka가 주는 메시지를 추출
+    if r.is_success:
+        error_msg = ""
+    else:
+        api_msg = ""
+        if isinstance(data, dict):
+            # Mureka 응답 후보 키 다수 처리
+            api_msg = (
+                data.get("message")
+                or data.get("error")
+                or (data.get("error", {}) if isinstance(data.get("error"), dict) else {}).get("message", "")
+                or data.get("detail")
+                or ""
+            )
+            if isinstance(api_msg, dict):
+                api_msg = api_msg.get("message", str(api_msg))
+        prefix = {
+            401: "Mureka 키 인증 실패",
+            403: "Mureka 권한 없음",
+            429: "Mureka 사용 한도 초과 또는 동시 호출 제한",
+        }.get(r.status_code, f"Mureka HTTP {r.status_code}")
+        error_msg = f"{prefix}{' — ' + str(api_msg)[:200] if api_msg else ''}"
+
     return {
         "ok": r.is_success,
         "status_code": r.status_code,
         "data": data,
-        "error": "" if r.is_success else f"HTTP {r.status_code}",
+        "error": error_msg,
     }
 
 

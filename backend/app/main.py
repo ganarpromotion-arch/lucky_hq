@@ -60,3 +60,8 @@ def page_department(slug: str):
     if target.exists():
         return FileResponse(target)
     return JSONResponse({"error": f"부서 페이지 없음: {slug}"}, status_code=404)
+
+
+@app.get("/secrets")
+def page_secrets():
+    return FileResponse(FRONTEND_DIR / "secrets.html")

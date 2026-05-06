@@ -17,6 +17,36 @@ from ..models import Setting, AuditLog
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
+# 본부가 사용하는 외부 API 카탈로그 (UI 통합 관리 화면용)
+# - 신규 provider 추가 시 여기에 한 줄 추가하면 /secrets 페이지에 자동 노출
+SECRETS_CATALOG: list[dict] = [
+    {
+        "key": "mureka_api_key",
+        "label": "Mureka",
+        "description": "음악 생성 API. 음악제작 부서가 곡을 만들 때 사용.",
+        "docs_url": "https://platform.mureka.ai",
+        "used_by": ["music_producer"],
+        "required": True,
+    },
+    {
+        "key": "anthropic_api_key",
+        "label": "Anthropic Claude",
+        "description": "작곡가 직원이 가사를 작성하는 LLM. Railway env에 있으면 자동 사용.",
+        "docs_url": "https://console.anthropic.com",
+        "used_by": ["songwriter"],
+        "required": False,
+    },
+    {
+        "key": "openai_api_key",
+        "label": "OpenAI",
+        "description": "작곡가 LLM 폴백. Anthropic 실패 시 자동 시도.",
+        "docs_url": "https://platform.openai.com",
+        "used_by": ["songwriter"],
+        "required": False,
+    },
+]
+
+
 def _mask(value: str) -> str:
     if not value:
         return ""
@@ -44,6 +74,22 @@ class SettingUpsert(BaseModel):
 def list_settings(db: Session = Depends(get_db)):
     rows = db.query(Setting).order_by(Setting.key).all()
     return [_serialize(r) for r in rows]
+
+
+@router.get("/catalog")
+def get_catalog(db: Session = Depends(get_db)):
+    """모든 등록 가능한 API 키 + 현재 등록 상태."""
+    by_key = {r.key: r for r in db.query(Setting).all()}
+    out = []
+    for entry in SECRETS_CATALOG:
+        row = by_key.get(entry["key"])
+        out.append({
+            **entry,
+            "value": _mask(row.value) if row and row.is_secret else (row.value if row else ""),
+            "has_value": bool(row and row.value),
+            "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+        })
+    return out
 
 
 @router.get("/{key}")

@@ -488,6 +488,87 @@ label.field > small {
 }
 .settings-row .empty-val { color: var(--text-dim); font-style: italic; }
 
+/* ============ Secrets — 통합 관리 페이지 ============ */
+.secret-item {
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+.secret-item:first-child { border-top: none; padding-top: 4px; }
+
+.secret-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.secret-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.secret-key {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-top: 2px;
+}
+.secret-desc {
+  font-size: 13px;
+  color: var(--text-soft);
+  margin-top: 6px;
+  line-height: 1.55;
+}
+.secret-desc code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.secret-collapsed {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--surface-soft);
+  border-radius: var(--r-sm);
+}
+.secret-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.secret-edit {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+.secret-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 음악부서 페이지 — 컴팩트 API 키 카드 */
+.api-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface-soft);
+  border-radius: var(--r-md);
+  gap: 10px;
+}
+.api-mini .info {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+}
+.api-mini .label { font-size: 13px; color: var(--text); font-weight: 500; }
+.api-mini .val { font-family: var(--font-mono); font-size: 12px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+
+.api-mini + .api-mini { margin-top: 8px; }
+
 /* ============ Plan preview (작곡 기획안) ============ */
 .plan-preview {
   display: grid;
