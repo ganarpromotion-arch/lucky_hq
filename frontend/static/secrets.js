@@ -25,6 +25,9 @@ const editing = new Set();   // 수정 모드인 키들
 function renderItem(item) {
   const isEditing = editing.has(item.key) || !item.has_value;
   const usedBy = (item.used_by || []).join(', ');
+  const isSecret = item.is_secret !== false;   // 카탈로그가 명시 안 하면 비밀
+  const inputType = isSecret ? 'password' : 'text';
+  const placeholder = isSecret ? '키를 붙여넣고 저장' : '값을 입력하고 저장';
   return `
     <div class="secret-item ${item.has_value ? 'is-set' : 'is-empty'}">
       <div class="secret-head">
@@ -44,9 +47,9 @@ function renderItem(item) {
 
       ${isEditing ? `
         <div class="secret-edit">
-          <input id="in-${item.key}" type="password" class="input mono" placeholder="키를 붙여넣고 저장" autocomplete="off">
+          <input id="in-${item.key}" type="${inputType}" class="input mono" placeholder="${placeholder}" autocomplete="off">
           <div class="secret-actions">
-            <button class="btn btn-primary btn-sm" data-save="${item.key}">저장</button>
+            <button class="btn btn-primary btn-sm" data-save="${item.key}" data-secret="${isSecret ? '1' : '0'}">저장</button>
             ${item.has_value
               ? `<button class="btn btn-danger btn-sm" data-clear="${item.key}">삭제</button>`
               : ''}

@@ -106,7 +106,25 @@
     </div>
   </section>
 
-  <!-- 작업 목록 -->
+  <!-- 오늘의 배치 (자동 생성된 10곡 검토창) -->
+  <section class="card" id="batch-card" style="display:none;">
+    <div class="card-head" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div>
+        <h2>📅 오늘의 배치</h2>
+        <p class="desc" id="batch-meta">불러오는 중…</p>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <span id="batch-deadline" class="badge tint" style="display:none;"></span>
+        <button class="btn btn-sm" id="btn-batch-now">지금 1회 실행</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="batch-themes" style="margin-bottom:14px;"></div>
+      <div class="jobs" id="batch-jobs"></div>
+    </div>
+  </section>
+
+  <!-- 작업 목록 (수동 + 누적) -->
   <section class="card">
     <div class="card-head">
       <h2>작업 목록</h2>

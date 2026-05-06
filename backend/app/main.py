@@ -12,6 +12,7 @@ from .db import Base, engine
 from .routers import console as console_router
 from .routers import music as music_router
 from .routers import settings as settings_router
+from .scheduler import start_scheduler, stop_scheduler
 from .seed import run_seed
 
 
@@ -24,7 +25,12 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     # 2) 시드
     run_seed()
-    yield
+    # 3) 스케줄러 시작 (매일 배치 + 검토 마감 체크)
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
 
 
 app = FastAPI(title="Lucky HQ", version="1.0.0", lifespan=lifespan)

@@ -29,6 +29,10 @@ AGENTS = [
      "role": "songwriter", "avatar": "🎼",
      "voice": "최근 이슈를 받아 제목·가사·스타일을 기획한다.",
      "department": "music", "is_active": True},
+    {"slug": "curator", "name": "큐레이터",
+     "role": "curator", "avatar": "🔍",
+     "voice": "매일 최신 이슈와 트렌드를 모아 곡 컨셉 10개를 큐레이션한다.",
+     "department": "music", "is_active": True},
 
     # ── 비활성 (시드만, UI 숨김) ─────────────────────
     {"slug": "commander", "name": "지휘관", "role": "commander", "avatar": "🎯",

@@ -9,15 +9,18 @@
 Mureka 호출은 반드시 api_manager.call_api()를 통해서만 진행한다.
 """
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from ..db import get_db
-from ..models import Job, Agent, AuditLog
+from ..models import Job, Agent, AuditLog, Batch
 from ..api_manager import call_api
 from ..songwriter import compose_plan as songwriter_compose
+from ..batch_runner import run_daily_batch, check_mureka_balance
+from ..curator import curate as curator_curate
 
 router = APIRouter(prefix="/api/music", tags=["music"])
 
@@ -261,6 +264,158 @@ def _serialize_job(j: Job) -> dict:
         "audio_urls": audio_urls,
         "output": out if isinstance(out, dict) else {},
         "error": j.error or "",
+        "batch_id": getattr(j, "batch_id", None),
+        "removed_at": j.removed_at.isoformat() if getattr(j, "removed_at", None) else None,
+        "removed_by": getattr(j, "removed_by", "") or "",
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
     }
+
+
+# ─── 일일 배치 ───────────────────────────────────────────
+def _serialize_batch(b: Batch, jobs: list[Job] | None = None) -> dict:
+    out = {
+        "id": b.id,
+        "run_date": b.run_date,
+        "status": b.status,
+        "target_count": b.target_count,
+        "curated_themes": b.curated_themes or {},
+        "deadline_at": b.deadline_at.isoformat() if b.deadline_at else None,
+        "youtube_video_id": b.youtube_video_id or "",
+        "youtube_url": b.youtube_url or "",
+        "image_url": b.image_url or "",
+        "error": b.error or "",
+        "created_at": b.created_at.isoformat() if b.created_at else None,
+        "updated_at": b.updated_at.isoformat() if b.updated_at else None,
+    }
+    if jobs is not None:
+        out["jobs"] = [_serialize_job(j) for j in jobs]
+        out["counts"] = {
+            "total": len(jobs),
+            "done": sum(1 for j in jobs if j.status == "done"),
+            "failed": sum(1 for j in jobs if j.status == "failed"),
+            "running": sum(1 for j in jobs if j.status == "running"),
+            "pending": sum(1 for j in jobs if j.status == "pending"),
+            "removed": sum(1 for j in jobs if j.removed_at is not None),
+        }
+    return out
+
+
+@router.get("/batches")
+def list_batches(limit: int = 14, db: Session = Depends(get_db)):
+    """최근 배치 목록 (기본 14일)."""
+    rows = (
+        db.query(Batch)
+        .filter(Batch.department_slug == "music")
+        .order_by(desc(Batch.created_at))
+        .limit(min(limit, 60))
+        .all()
+    )
+    return [_serialize_batch(b) for b in rows]
+
+
+@router.get("/batches/{batch_id}")
+def get_batch(batch_id: int, db: Session = Depends(get_db)):
+    b = db.get(Batch, batch_id)
+    if not b:
+        raise HTTPException(404, "batch not found")
+    jobs = (
+        db.query(Job)
+        .filter(Job.batch_id == batch_id)
+        .order_by(Job.id.asc())
+        .all()
+    )
+    return _serialize_batch(b, jobs=jobs)
+
+
+@router.get("/batches/today/current")
+def get_today_batch(db: Session = Depends(get_db)):
+    """오늘의 배치(가장 최근). 없으면 가장 최근 배치를 반환 (검토 중 카드를 놓치지 않도록)."""
+    try:
+        today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+    except Exception:
+        today = datetime.now().strftime("%Y-%m-%d")
+    b = (
+        db.query(Batch)
+        .filter(Batch.department_slug == "music", Batch.run_date == today)
+        .order_by(desc(Batch.id))
+        .first()
+    )
+    if not b:
+        # 가장 최근 배치(아직 검토 중일 수 있음)도 같이 보여주기 좋음
+        b = (
+            db.query(Batch)
+            .filter(Batch.department_slug == "music")
+            .order_by(desc(Batch.id))
+            .first()
+        )
+    if not b:
+        return None
+    jobs = (
+        db.query(Job)
+        .filter(Job.batch_id == b.id)
+        .order_by(Job.id.asc())
+        .all()
+    )
+    return _serialize_batch(b, jobs=jobs)
+
+
+@router.post("/batches/run-now")
+async def run_batch_now():
+    """수동 트리거. 스케줄러를 기다리지 않고 즉시 1회 실행.
+    오래 걸리는 작업이라 동기 응답은 시작 결과만 줘도 되지만,
+    여기서는 단순함을 위해 끝까지 기다린 뒤 요약 반환."""
+    result = await run_daily_batch(triggered_by="manual")
+    return result
+
+
+@router.get("/billing-balance")
+async def billing_balance(db: Session = Depends(get_db)):
+    """잔량 조회 + 추출된 숫자."""
+    return await check_mureka_balance(db)
+
+
+class CuratePreviewRequest(BaseModel):
+    count: int = Field(default=10, ge=1, le=20)
+    seed_text: str = Field(default="", max_length=2000)
+
+
+@router.post("/curator/preview")
+async def curator_preview(req: CuratePreviewRequest, db: Session = Depends(get_db)):
+    """큐레이터 직원 단독 호출. 배치 없이 테마만 미리 본다."""
+    return await curator_curate(db, count=req.count, seed_text=req.seed_text)
+
+
+# ─── 검토 단계: 사이트에서 ❌ ────────────────────────────
+class ExcludeRequest(BaseModel):
+    by: str = Field(default="owner", max_length=64)
+
+
+@router.post("/jobs/{job_id}/exclude")
+def exclude_job(job_id: int, req: ExcludeRequest, db: Session = Depends(get_db)):
+    """곡을 검토 결과에서 제외. 한 명이라도 ❌ 누르면 즉시 제외됨."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+    if job.removed_at is not None:
+        return _serialize_job(job)  # 이미 제외됨 (idempotent)
+    job.removed_at = datetime.utcnow()
+    job.removed_by = req.by[:64]
+    _audit(db, "music.job.excluded", target=f"job:{job.id}",
+           detail={"by": job.removed_by, "batch_id": job.batch_id},
+           actor=req.by[:64] or "owner")
+    db.commit()
+    return _serialize_job(job)
+
+
+@router.post("/jobs/{job_id}/restore")
+def restore_job(job_id: int, db: Session = Depends(get_db)):
+    """제외 취소 (실수 복구용)."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+    job.removed_at = None
+    job.removed_by = ""
+    _audit(db, "music.job.restored", target=f"job:{job.id}", detail={"batch_id": job.batch_id})
+    db.commit()
+    return _serialize_job(job)

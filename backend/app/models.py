@@ -59,6 +59,38 @@ class Job(Base):
     output = Column(JSON, default=dict)
     external_id = Column(String(128), nullable=True)  # Mureka task_id 등
     error = Column(Text, default="")
+    # 일일 배치 / 검토용
+    batch_id = Column(Integer, ForeignKey("batches.id"), nullable=True, index=True)
+    removed_at = Column(DateTime, nullable=True)        # 검토자가 ❌ 누른 시각
+    removed_by = Column(String(64), default="")         # owner 또는 telegram chat_id 별칭
+    local_audio_path = Column(String(512), default="")  # 다운로드된 mp3 경로 (Phase 3에서 채움)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Batch(Base):
+    """일일 자동 배치. 큐레이터 → 작사가 → Mureka 10곡을 묶는다.
+
+    상태:
+    - generating       : 큐레이터/작사가/Mureka 생성 중
+    - awaiting_review  : 10곡 다 떨어짐. 직원들이 ❌로 빼는 검토창
+    - finalizing       : 검토 마감 → ffmpeg 합치기 + YouTube 업로드 중 (Phase 3)
+    - uploaded         : YouTube 업로드 완료
+    - failed           : 어느 단계든 실패
+    """
+    __tablename__ = "batches"
+
+    id = Column(Integer, primary_key=True)
+    department_slug = Column(String(64), default="music", nullable=False)
+    run_date = Column(String(10), index=True, nullable=False)  # 'YYYY-MM-DD'
+    status = Column(String(32), default="generating")
+    target_count = Column(Integer, default=10)
+    curated_themes = Column(JSON, default=list)   # 큐레이터가 뽑은 (issue, concept) 리스트
+    deadline_at = Column(DateTime, nullable=True) # 검토 마감 (지나면 finalize)
+    youtube_video_id = Column(String(64), default="")
+    youtube_url = Column(String(512), default="")
+    image_url = Column(String(512), default="")   # AI 생성 정지 이미지
+    error = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

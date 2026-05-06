@@ -295,15 +295,176 @@ async function onGenerate() {
   }
 }
 
+// ─────────────────────────────────────────────────
+// 오늘의 배치 (큐레이터 → 작사가 → Mureka 10곡)
+// ─────────────────────────────────────────────────
+function fmtKstFromIso(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      hour12: false,
+      month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return iso; }
+}
+
+function deadlineCountdown(iso) {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return '';
+  if (ms <= 0) return '검토 마감 지남';
+  const min = Math.floor(ms / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  if (min <= 0) return `검토 마감까지 ${sec}초`;
+  return `검토 마감까지 ${min}분 ${sec}초`;
+}
+
+function renderBatchJob(j) {
+  const title = (j.input && j.input.title) || `곡 #${j.id}`;
+  const style = (j.input && j.input.style) || '';
+  const issue = (j.input && j.input.issue) || '';
+  const concept = (j.input && j.input.concept) || '';
+  const variants = Array.isArray(j.audio_urls) ? j.audio_urls : [];
+  const isRemoved = !!j.removed_at;
+  const players = variants.length
+    ? variants.map((v, i) => `
+        <div class="player" style="margin-top:6px;">
+          <div style="font-size:12px; color:#666; margin-bottom:3px;">버전 ${i + 1}${v.duration_ms ? ` · ${Math.round(v.duration_ms / 1000)}초` : ''}</div>
+          <audio controls preload="none" src="${v.url}"></audio>
+        </div>`).join('')
+    : (j.audio_url
+        ? `<div class="player"><audio controls preload="none" src="${j.audio_url}"></audio></div>`
+        : '');
+  const action = isRemoved
+    ? `<button class="btn btn-sm js-restore" data-id="${j.id}">↩ 복원 (${j.removed_by || '?'})</button>`
+    : (j.status === 'done'
+        ? `<button class="btn btn-sm btn-danger js-exclude" data-id="${j.id}">❌ 제외</button>`
+        : '');
+  const errLine = j.status === 'failed'
+    ? `<div class="err">에러: ${j.error || '알 수 없음'}</div>`
+    : '';
+  return `
+    <div class="job ${isRemoved ? 'is-removed' : ''}" data-id="${j.id}" style="${isRemoved ? 'opacity:0.5;' : ''}">
+      ${statusBadge(j.status)}
+      <div class="meta">
+        <div class="title">${title}${isRemoved ? ' <span class="badge fail">제외됨</span>' : ''}</div>
+        <div class="sub">${style}${issue ? ' · ' + issue : ''}</div>
+        ${concept && concept !== style ? `<div class="sub" style="font-size:11px; color:#888;">컨셉: ${concept}</div>` : ''}
+      </div>
+      <div class="id">#${j.id}</div>
+      ${players}
+      <div style="margin-top:6px;">${action}</div>
+      ${errLine}
+    </div>
+  `;
+}
+
+let batchData = null;
+
+async function refreshBatch() {
+  try {
+    const b = await fetchJSON('/api/music/batches/today/current');
+    batchData = b;
+    const card = $('#batch-card');
+    if (!b) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+    const counts = b.counts || {};
+    const meta = [
+      `${b.run_date}`,
+      `상태: ${b.status}`,
+      `완료 ${counts.done || 0}/${counts.total || 0}`,
+      counts.failed ? `실패 ${counts.failed}` : '',
+      counts.removed ? `제외 ${counts.removed}` : '',
+    ].filter(Boolean).join(' · ');
+    $('#batch-meta').textContent = meta;
+    const dl = $('#batch-deadline');
+    if (b.deadline_at && b.status === 'awaiting_review') {
+      dl.style.display = '';
+      dl.textContent = deadlineCountdown(b.deadline_at);
+    } else {
+      dl.style.display = 'none';
+    }
+    // 큐레이션 테마 요약
+    const themes = (b.curated_themes && b.curated_themes.themes) || [];
+    if (themes.length) {
+      $('#batch-themes').innerHTML = `
+        <details>
+          <summary style="cursor:pointer; color:#666; font-size:13px;">큐레이션 테마 ${themes.length}개 보기 (${(b.curated_themes && b.curated_themes.source) || '-'})</summary>
+          <ol style="margin:8px 0 0 20px; font-size:13px; color:#555;">
+            ${themes.map(t => `<li>${t.issue}${t.concept ? ` <span style="color:#999;">— ${t.concept}</span>` : ''}</li>`).join('')}
+          </ol>
+        </details>`;
+    } else {
+      $('#batch-themes').innerHTML = '';
+    }
+    // 곡 목록
+    const jobsWrap = $('#batch-jobs');
+    if (!b.jobs || !b.jobs.length) {
+      jobsWrap.innerHTML = '<div class="empty">아직 곡이 없습니다.</div>';
+    } else {
+      jobsWrap.innerHTML = b.jobs.map(renderBatchJob).join('');
+      jobsWrap.querySelectorAll('.js-exclude').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm(`#${btn.dataset.id} 를 빼시겠어요? (한 명이 ❌하면 즉시 제외)`)) return;
+          btn.disabled = true;
+          try {
+            await fetchJSON(`/api/music/jobs/${btn.dataset.id}/exclude`, {
+              method: 'POST',
+              body: JSON.stringify({ by: 'owner' }),
+            });
+            await refreshBatch();
+          } catch (e) { showToast('✗ ' + e.message); btn.disabled = false; }
+        });
+      });
+      jobsWrap.querySelectorAll('.js-restore').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await fetchJSON(`/api/music/jobs/${btn.dataset.id}/restore`, { method: 'POST' });
+            await refreshBatch();
+          } catch (e) { showToast('✗ ' + e.message); btn.disabled = false; }
+        });
+      });
+    }
+  } catch (_) { /* 무시 */ }
+}
+
+async function onRunBatchNow() {
+  if (!confirm('지금 일일 배치를 1회 실행할까요? Mureka 호출이 발생합니다.')) return;
+  const btn = $('#btn-batch-now');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '실행 중… (10~20분)';
+  try {
+    const r = await fetchJSON('/api/music/batches/run-now', { method: 'POST' });
+    showToast(`배치 #${r.batch_id} · 완료 ${r.done}/${r.created} · 실패 ${r.failed}${r.skipped_reason ? ' · skip: ' + r.skipped_reason : ''}`);
+  } catch (e) {
+    showToast('✗ ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+    await refreshBatch();
+  }
+}
+
 (function main() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
   $('#btn-billing').addEventListener('click', onCheckBilling);
+  const bn = $('#btn-batch-now');
+  if (bn) bn.addEventListener('click', onRunBatchNow);
 
   loadAgents();
   loadSettings();
   refreshJobs();
+  refreshBatch();
   setInterval(loadAgents, 8000);
   setInterval(loadSettings, 12000);
   setInterval(refreshJobs, 5000);
+  setInterval(refreshBatch, 5000);  // 카운트다운/진행상황 갱신
 })();
