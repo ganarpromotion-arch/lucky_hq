@@ -117,13 +117,16 @@ async def _call_mureka(
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         if operation == "generate":
-            # POST /v1/song/generate  (memory 기준)
+            # POST /v1/song/generate
             r = await client.post(f"{base}/v1/song/generate", headers=headers, json=payload)
         elif operation == "query":
             task_id = payload.get("id") or payload.get("task_id")
             if not task_id:
                 return {"ok": False, "error": "id 누락", "status_code": 0, "data": None}
             r = await client.get(f"{base}/v1/song/query/{task_id}", headers=headers)
+        elif operation == "billing":
+            # GET /v1/account/billing — 키 유효성 + 잔량 확인용
+            r = await client.get(f"{base}/v1/account/billing", headers=headers)
         else:
             return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
 

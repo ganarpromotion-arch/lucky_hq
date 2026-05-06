@@ -103,6 +103,35 @@ async function loadSettings() {
   } catch (e) { /* 무시 */ }
 }
 
+async function onCheckBilling() {
+  const hint = $('#billing-hint');
+  const btn = $('#btn-billing');
+  btn.disabled = true;
+  hint.textContent = 'Mureka에 잔량 조회 중…'; hint.className = 'hint';
+  try {
+    const res = await fetchJSON('/api/music/mureka-billing');
+    if (!res.ok) {
+      hint.textContent = `✗ ${res.status_code || '?'} · ${res.error || '실패'}`;
+      hint.className = 'hint fail';
+      return;
+    }
+    const d = res.data || {};
+    const parts = [];
+    if (d.balance !== undefined) parts.push(`잔액: ${d.balance}`);
+    if (d.credits !== undefined) parts.push(`크레딧: ${d.credits}`);
+    if (d.plan) parts.push(`플랜: ${d.plan}`);
+    if (d.concurrency !== undefined) parts.push(`동시: ${d.concurrency}`);
+    const summary = parts.length ? parts.join(' · ') : JSON.stringify(d).slice(0, 200);
+    hint.textContent = `✓ 키 유효 — ${summary}`;
+    hint.className = 'hint ok';
+  } catch (e) {
+    hint.textContent = '✗ ' + e.message;
+    hint.className = 'hint fail';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ─────────────────────────────────────────────────
 // 작곡가 기획안
 // ─────────────────────────────────────────────────
@@ -233,6 +262,7 @@ async function onGenerate() {
 (function main() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
+  $('#btn-billing').addEventListener('click', onCheckBilling);
 
   loadAgents();
   loadSettings();

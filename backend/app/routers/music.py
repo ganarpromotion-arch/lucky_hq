@@ -130,6 +130,22 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     return _serialize_job(job)
 
 
+@router.get("/mureka-billing")
+async def mureka_billing(db: Session = Depends(get_db)):
+    """Mureka 계정 잔량/요금제 조회. 키 유효성 + 한도 진단용.
+    GET /v1/account/billing 호출 결과를 그대로 돌려준다."""
+    result = await call_api(
+        db, provider="mureka", operation="billing",
+        payload={}, requester="music_producer",
+    )
+    return {
+        "ok": result.get("ok", False),
+        "status_code": result.get("status_code", 0),
+        "data": result.get("data"),
+        "error": result.get("error", ""),
+    }
+
+
 @router.get("/jobs")
 def list_jobs(limit: int = 20, db: Session = Depends(get_db)):
     rows = (
