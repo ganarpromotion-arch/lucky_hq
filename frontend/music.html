@@ -92,6 +92,35 @@
     </div>
   </section>
 
+  <!-- 큐레이터 5x3 안 -->
+  <section class="card">
+    <div class="card-head">
+      <h2>0단계 · 큐레이터 안 (선택)</h2>
+      <p class="desc">큐레이터가 오늘 분위기에 맞는 옵션 5x3개를 제안합니다. 마음에 드는 걸 골라서 작곡가에 넘기거나, 직접 입력하셔도 됩니다.</p>
+    </div>
+    <div class="card-body">
+      <button id="btn-curator" class="btn">🗂️ 오늘의 안 받기</button>
+      <div id="curator-options" style="display:none; margin-top:16px;">
+        <div class="curator-group">
+          <div class="curator-label">언어 / 톤</div>
+          <div class="curator-pills" id="opt-languages"></div>
+        </div>
+        <div class="curator-group">
+          <div class="curator-label">분위기</div>
+          <div class="curator-pills" id="opt-moods"></div>
+        </div>
+        <div class="curator-group">
+          <div class="curator-label">키워드</div>
+          <div class="curator-pills" id="opt-keywords"></div>
+        </div>
+        <div class="curator-actions">
+          <button id="btn-curator-apply" class="btn btn-primary btn-sm" disabled>선택한 안으로 작곡가 호출 →</button>
+          <span class="hint" id="curator-hint"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- 작곡 워크플로우 -->
   <section class="card">
     <div class="card-head">

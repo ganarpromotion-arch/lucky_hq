@@ -104,6 +104,76 @@ async function loadSettings() {
 }
 
 // ─────────────────────────────────────────────────
+// 큐레이터 5x3 안
+// ─────────────────────────────────────────────────
+const curatorPicks = { language: null, mood: null, keyword: null };
+
+function renderPills(containerId, items, kind) {
+  const wrap = document.getElementById(containerId);
+  wrap.innerHTML = items.map((text, i) => `
+    <button type="button" class="pill" data-kind="${kind}" data-value="${text.replace(/"/g, '&quot;')}">
+      <span class="pill-num">${i + 1}</span>${text}
+    </button>
+  `).join('');
+  wrap.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // 같은 kind에서 다른 선택 해제
+      wrap.querySelectorAll('.pill').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      curatorPicks[kind] = btn.dataset.value;
+      updateCuratorApply();
+    });
+  });
+}
+
+function updateCuratorApply() {
+  const ready = curatorPicks.language && curatorPicks.mood && curatorPicks.keyword;
+  $('#btn-curator-apply').disabled = !ready;
+  if (ready) {
+    $('#curator-hint').textContent = `${curatorPicks.keyword} · ${curatorPicks.mood} · ${curatorPicks.language}`;
+    $('#curator-hint').className = 'hint';
+  }
+}
+
+async function onCurator() {
+  const btn = $('#btn-curator');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '큐레이터 작성 중…';
+  try {
+    const opt = await fetchJSON('/api/music/curator/options');
+    renderPills('opt-languages', opt.languages || [], 'language');
+    renderPills('opt-moods', opt.moods || [], 'mood');
+    renderPills('opt-keywords', opt.keywords || [], 'keyword');
+    $('#curator-options').style.display = 'block';
+    curatorPicks.language = curatorPicks.mood = curatorPicks.keyword = null;
+    updateCuratorApply();
+    if (opt.source === 'fallback') {
+      $('#curator-hint').textContent = '⚠ Gemini 실패 → 기본 안 표시';
+      $('#curator-hint').className = 'hint fail';
+    } else {
+      $('#curator-hint').textContent = `${opt.today || '오늘'} 기준`;
+      $('#curator-hint').className = 'hint';
+    }
+  } catch (e) {
+    showToast('큐레이터 호출 실패: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+function onCuratorApply() {
+  if (!curatorPicks.keyword || !curatorPicks.mood || !curatorPicks.language) return;
+  // 작곡가의 issue 입력에 합쳐 넣고 자동으로 기획 트리거
+  const combined = `${curatorPicks.keyword} | 분위기: ${curatorPicks.mood} | 언어: ${curatorPicks.language}`;
+  $('#f-issue').value = combined;
+  $('#f-issue').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // 자동으로 기획안 만들기 호출
+  setTimeout(() => onComposePlan(), 400);
+}
+
+// ─────────────────────────────────────────────────
 // 보관곡 (다운로드된 audio 재생 + 삭제)
 // ─────────────────────────────────────────────────
 async function loadArchive() {
@@ -391,6 +461,8 @@ async function onGenerate() {
 (function main() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
+  $('#btn-curator').addEventListener('click', onCurator);
+  $('#btn-curator-apply').addEventListener('click', onCuratorApply);
 
   // 4개 배치 버튼 일반화
   document.querySelectorAll('[data-batch]').forEach(btn => {

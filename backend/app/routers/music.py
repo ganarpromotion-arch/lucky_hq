@@ -257,3 +257,12 @@ def delete_archived(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "곡을 찾을 수 없음")
     archiver.delete_archived(db, job)
     return {"ok": True}
+
+
+# ── 큐레이터 5×3 안 ──────────────────────────────────────
+@router.get("/curator/options")
+async def curator_options(db: Session = Depends(get_db)):
+    """큐레이터가 오늘의 5x3 안 (언어/분위기/키워드) 제안.
+    Gemini로 오늘 트렌드/계절 반영. 실패 시 폴백."""
+    from ..curator import propose_options
+    return await propose_options(db)

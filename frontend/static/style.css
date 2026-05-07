@@ -485,6 +485,59 @@ label.field > small {
   pointer-events: none;
 }
 
+/* ============ Curator pills ============ */
+.curator-group { margin-bottom: 14px; }
+.curator-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.curator-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--text);
+  transition: all 0.15s;
+}
+.pill:hover { background: var(--surface); border-color: var(--accent); }
+.pill.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.pill-num {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--text-soft);
+  border-radius: 50%;
+}
+.pill.on .pill-num { background: rgba(255, 255, 255, 0.3); color: #fff; }
+
+.curator-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
 /* ============ Archive (보관곡) ============ */
 .archive-item {
   padding: 14px;
