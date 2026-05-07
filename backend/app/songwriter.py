@@ -465,6 +465,36 @@ def _extract_json_block(text: str) -> Optional[str]:
     return None
 
 
+async def _llm_compose_gemini(db: Session, issue: str, model: str) -> Optional[dict]:
+    """Google Gemini로 가사 기획. 무료 티어, 빠름. 실패 시 None."""
+    payload = {
+        "model": model,
+        "system": SYSTEM_PROMPT,
+        "user": f"이슈: {issue}",
+        "max_tokens": 1500,
+        "temperature": 0.85,
+    }
+    result = await call_api(
+        db, provider="gemini", operation="generateContent",
+        payload=payload, requester="songwriter", timeout=45.0,
+    )
+    if not result.get("ok"):
+        return None
+    data = result.get("data") or {}
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return None
+    parts = ((candidates[0] or {}).get("content") or {}).get("parts") or []
+    text = ""
+    for p in parts:
+        if isinstance(p, dict) and p.get("text"):
+            text = p["text"]
+            break
+    if not text:
+        return None
+    return _parse_plan_json(text)
+
+
 async def _llm_compose_anthropic(db: Session, issue: str, model: str) -> Optional[dict]:
     """Anthropic Claude로 가사 기획. 실패 시 None."""
     payload = {
@@ -553,8 +583,13 @@ def _parse_plan_json(text: str) -> Optional[dict]:
 
 async def compose_plan(issue: str, db: Optional[Session] = None) -> dict:
     """이슈 → 기획안.
-    1) LLM (Anthropic 기본 / OpenAI 폴백)
-    2) 룰 기반 (LLM 실패 또는 db=None)"""
+    설정된 provider를 1차 시도, 실패 시 다른 LLM 시도, 마지막엔 룰 기반 폴백.
+
+    우선순위:
+      - songwriter_llm_provider 설정값을 1차로
+      - 그 외 사용 가능한 LLM을 차례로 시도
+      - 모두 실패 시 룰 기반
+    """
     issue = (issue or "").strip()
     if not issue:
         return compose_plan_rule(issue)
@@ -563,25 +598,46 @@ async def compose_plan(issue: str, db: Optional[Session] = None) -> dict:
         return compose_plan_rule(issue)
 
     settings = get_settings()
-    provider = (settings.songwriter_llm_provider or "anthropic").lower()
-    model = settings.songwriter_llm_model
+    provider = (settings.songwriter_llm_provider or "gemini").lower()
+    primary_model = settings.songwriter_llm_model
 
-    # 1차: 설정된 provider
-    plan = None
-    if provider == "anthropic":
-        plan = await _llm_compose_anthropic(db, issue, model)
-        if plan is None:
-            # 2차 폴백: openai (있으면)
-            plan = await _llm_compose_openai(db, issue, "gpt-4o-mini")
-    elif provider == "openai":
-        plan = await _llm_compose_openai(db, issue, model)
-        if plan is None:
-            plan = await _llm_compose_anthropic(db, issue, "claude-haiku-4-5-20251001")
+    # provider별 호출 함수
+    async def try_gemini(model: str = "gemini-2.5-flash") -> Optional[dict]:
+        return await _llm_compose_gemini(db, issue, model)
 
-    if plan:
-        return plan
+    async def try_anthropic(model: str = "claude-haiku-4-5-20251001") -> Optional[dict]:
+        return await _llm_compose_anthropic(db, issue, model)
 
-    # 3차 폴백: 룰 기반
+    async def try_openai(model: str = "gpt-4o-mini") -> Optional[dict]:
+        return await _llm_compose_openai(db, issue, model)
+
+    # 시도 순서 결정 — 설정된 provider가 1순위
+    plan: Optional[dict] = None
+    tried: list[str] = []
+
+    order = [provider]
+    for p in ("gemini", "anthropic", "openai"):
+        if p not in order:
+            order.append(p)
+
+    for p in order:
+        try:
+            if p == "gemini":
+                plan = await try_gemini(primary_model if provider == "gemini" else "gemini-2.5-flash")
+            elif p == "anthropic":
+                plan = await try_anthropic(primary_model if provider == "anthropic" else "claude-haiku-4-5-20251001")
+            elif p == "openai":
+                plan = await try_openai(primary_model if provider == "openai" else "gpt-4o-mini")
+            tried.append(p)
+            if plan:
+                plan["llm_provider"] = p
+                return plan
+        except Exception:
+            tried.append(f"{p}!")
+            continue
+
+    # 모두 실패 → 룰 폴백
     out = compose_plan_rule(issue)
     out["source"] = "rule_fallback"
+    out["llm_tried"] = tried
     return out

@@ -29,9 +29,17 @@ SECRETS_CATALOG: list[dict] = [
         "required": True,
     },
     {
+        "key": "gemini_api_key",
+        "label": "Google Gemini",
+        "description": "작곡가 직원이 가사를 작성하는 LLM (1순위, 무료 티어).",
+        "docs_url": "https://aistudio.google.com/apikey",
+        "used_by": ["songwriter"],
+        "required": False,
+    },
+    {
         "key": "anthropic_api_key",
         "label": "Anthropic Claude",
-        "description": "작곡가 직원이 가사를 작성하는 LLM. Railway env에 있으면 자동 사용.",
+        "description": "작곡가 LLM 폴백 (Gemini 실패 시).",
         "docs_url": "https://console.anthropic.com",
         "used_by": ["songwriter"],
         "required": False,
@@ -39,7 +47,7 @@ SECRETS_CATALOG: list[dict] = [
     {
         "key": "openai_api_key",
         "label": "OpenAI",
-        "description": "작곡가 LLM 폴백. Anthropic 실패 시 자동 시도.",
+        "description": "작곡가 LLM 폴백 (Gemini, Anthropic 실패 시).",
         "docs_url": "https://platform.openai.com",
         "used_by": ["songwriter"],
         "required": False,

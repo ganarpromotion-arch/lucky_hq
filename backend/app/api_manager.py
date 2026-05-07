@@ -67,6 +67,8 @@ async def call_api(
             result = await _call_anthropic(db, operation, payload, settings, timeout)
         elif provider == "openai":
             result = await _call_openai(db, operation, payload, settings, timeout)
+        elif provider == "gemini":
+            result = await _call_gemini(db, operation, payload, settings, timeout)
         elif provider == "telegram":
             result = await _call_telegram(db, operation, payload, settings, timeout)
         else:
@@ -233,6 +235,72 @@ async def _call_openai(
         "status_code": r.status_code,
         "data": data,
         "error": "" if r.is_success else f"HTTP {r.status_code}: {str(data)[:200]}",
+    }
+
+
+async def _call_gemini(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """Google Gemini API.
+
+    operation:
+      - "generateContent" : POST /v1beta/models/{model}:generateContent
+        payload: {"model": "gemini-2.5-flash", "system": "...", "user": "...", "max_tokens": 1500}
+
+    무료 티어: 분당 15회, 일일 1500회.
+    """
+    api_key = _resolve_secret(db, "gemini_api_key", settings.gemini_api_key)
+    if not api_key:
+        return {"ok": False, "error": "Gemini API 키 미설정 (GEMINI_API_KEY)", "status_code": 0, "data": None}
+
+    if operation != "generateContent":
+        return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
+
+    model = payload.get("model") or settings.songwriter_llm_model or "gemini-2.5-flash"
+    system_text = payload.get("system") or ""
+    user_text = payload.get("user") or ""
+    max_tokens = int(payload.get("max_tokens") or 1500)
+    temperature = float(payload.get("temperature") or 0.7)
+
+    base = settings.gemini_base_url.rstrip("/")
+    url = f"{base}/v1beta/models/{model}:generateContent?key={api_key}"
+
+    body: dict[str, Any] = {
+        "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "responseMimeType": "application/json",  # 작곡가는 JSON 응답 필요
+        },
+    }
+    if system_text:
+        body["systemInstruction"] = {"parts": [{"text": system_text}]}
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(url, json=body, headers={"Content-Type": "application/json"})
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:500]}
+
+    if r.is_success:
+        error_msg = ""
+    else:
+        api_msg = ""
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                api_msg = err.get("message", "")
+            elif isinstance(err, str):
+                api_msg = err
+        error_msg = f"Gemini HTTP {r.status_code}{' — ' + str(api_msg)[:200] if api_msg else ''}"
+
+    return {
+        "ok": r.is_success,
+        "status_code": r.status_code,
+        "data": data,
+        "error": error_msg,
     }
 
 

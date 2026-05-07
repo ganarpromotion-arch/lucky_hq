@@ -30,10 +30,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com"
 
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com"
+
     # 작곡가 직원 — 가사 생성 LLM 모델
-    # claude-haiku-4-5-20251001 (빠르고 저렴) / claude-sonnet-4-6 (더 자연스러움)
-    songwriter_llm_provider: str = "anthropic"   # anthropic | openai
-    songwriter_llm_model: str = "claude-haiku-4-5-20251001"
+    # 우선순위: gemini (무료, 빠름) → anthropic → openai → 룰 폴백
+    songwriter_llm_provider: str = "gemini"   # gemini | anthropic | openai
+    songwriter_llm_model: str = "gemini-2.5-flash"
 
     # 텔레그램 — 곡 보고 + 채택 답장 webhook
     telegram_bot_token: str = ""
