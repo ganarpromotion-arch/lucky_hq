@@ -241,25 +241,45 @@ function onCuratorApply() {
 }
 
 // ─────────────────────────────────────────────────
-// 보관곡 (다운로드된 audio 재생 + 삭제)
+// 보관곡 (다운로드된 audio 재생 + 체크 후 영상 + 삭제)
 // ─────────────────────────────────────────────────
+const archivePicked = new Set();
+
+function refreshArchivePickCount() {
+  const n = archivePicked.size;
+  const el = $('#archive-pick-count');
+  if (el) el.textContent = String(n);
+  const btn = $('#btn-archive-make-videos');
+  if (btn) btn.disabled = (n === 0);
+}
+
 async function loadArchive() {
   try {
     const items = await fetchJSON('/api/music/archive?limit=20');
     const wrap = $('#archive-list');
     if (!items.length) {
       wrap.innerHTML = '<div class="empty">아직 보관된 곡이 없습니다. 곡이 완성되면 자동으로 보관됩니다.</div>';
+      archivePicked.clear();
+      refreshArchivePickCount();
       return;
     }
+    // 사라진 곡은 picked에서 제거
+    const liveIds = new Set(items.map(it => String(it.id)));
+    [...archivePicked].forEach(id => { if (!liveIds.has(id)) archivePicked.delete(id); });
+
     const reviewLabel = (s) => ({
       approved: '<span class="badge ok">채택</span>',
       rejected: '<span class="badge fail">거절</span>',
       pending_review: '<span class="badge tint">검토 대기</span>',
     })[s] || '';
-    wrap.innerHTML = items.map(it => `
+    wrap.innerHTML = items.map(it => {
+      const checked = archivePicked.has(String(it.id)) ? 'checked' : '';
+      return `
       <div class="archive-item">
-        <div class="archive-head">
-          <div class="archive-title">
+        <div class="archive-head" style="display:flex; gap:10px; align-items:center;">
+          <input type="checkbox" class="archive-pick" data-archive-pick="${it.id}" ${checked}
+                 style="width:18px; height:18px; cursor:pointer;" title="이 곡을 영상으로 만들기">
+          <div class="archive-title" style="flex:1;">
             <strong>#${it.id} · ${it.title}</strong>
             ${reviewLabel(it.review_status)}
           </div>
@@ -268,13 +288,66 @@ async function loadArchive() {
         ${it.issue ? `<div class="archive-issue">${it.issue}</div>` : ''}
         <div class="archive-meta">${it.style || ''} · ${it.size_kb}KB</div>
         <audio controls preload="none" src="${it.audio_url}" style="width: 100%; margin-top: 8px;"></audio>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
     document.querySelectorAll('[data-archive-del]').forEach(btn => {
       btn.addEventListener('click', () => onDeleteArchive(btn.dataset.archiveDel));
     });
+    document.querySelectorAll('[data-archive-pick]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = cb.dataset.archivePick;
+        if (cb.checked) archivePicked.add(id); else archivePicked.delete(id);
+        refreshArchivePickCount();
+      });
+    });
+    refreshArchivePickCount();
   } catch (e) {
     $('#archive-list').innerHTML = `<div class="empty">불러오기 실패: ${e.message}</div>`;
+  }
+}
+
+function onArchivePickAll() {
+  document.querySelectorAll('[data-archive-pick]').forEach(cb => {
+    cb.checked = true;
+    archivePicked.add(cb.dataset.archivePick);
+  });
+  refreshArchivePickCount();
+}
+
+function onArchivePickNone() {
+  document.querySelectorAll('[data-archive-pick]').forEach(cb => { cb.checked = false; });
+  archivePicked.clear();
+  refreshArchivePickCount();
+}
+
+async function onMakeVideosFromArchive() {
+  if (!archivePicked.size) return;
+  const ids = [...archivePicked].map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+  if (!confirm(`${ids.length}곡을 영상으로 만들고 텔레그램으로 보냅니다.\n곡당 약 30~60초 인코딩 시간이 듭니다.\n\n진행할까요?`)) return;
+
+  const btn = $('#btn-archive-make-videos');
+  const status = $('#archive-video-status');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '의뢰 중…';
+  status.style.display = '';
+  status.className = '';
+  status.textContent = `🎬 ${ids.length}곡 영상 인코딩 시작 — 텔레그램에 순차 전송됩니다.`;
+
+  try {
+    const res = await fetchJSON('/api/music/archive/make-videos', {
+      method: 'POST',
+      body: JSON.stringify({ job_ids: ids }),
+    });
+    status.innerHTML = `✓ ${res.queued}곡 큐 등록 완료. 진행은 텔레그램으로 보고됩니다.`;
+    archivePicked.clear();
+    onArchivePickNone();
+  } catch (e) {
+    status.className = 'empty';
+    status.textContent = '✗ 실패: ' + e.message;
+  } finally {
+    btn.textContent = orig;
+    refreshArchivePickCount();
   }
 }
 
@@ -282,6 +355,7 @@ async function onDeleteArchive(jobId) {
   if (!confirm(`곡 #${jobId}을(를) 삭제할까요? 파일과 보관 기록이 모두 사라집니다.`)) return;
   try {
     await fetchJSON(`/api/music/archive/${jobId}`, { method: 'DELETE' });
+    archivePicked.delete(String(jobId));
     await loadArchive();
     showToast(`곡 #${jobId} 삭제됨`);
   } catch (e) {
@@ -367,12 +441,9 @@ async function loadLatestBatch() {
 }
 
 async function onTestBatch(targetCount, makeVideo) {
-  const videoLabel = makeVideo ? '영상 mp4' : 'audio';
-  const eta = makeVideo
-    ? (targetCount === 1 ? '약 3분' : '약 15분')
-    : (targetCount === 1 ? '약 1분' : '약 6분');
-  const cost = `약 ${targetCount * 100}원`;
-  if (!confirm(`${targetCount}곡 (${videoLabel})\n예상: ${eta}, ${cost}\n\n시작할까요?`)) return;
+  // 영상은 이제 보관곡 체크 후에만 만든다 — 배치는 audio 전용
+  const eta = targetCount === 1 ? '약 1~2분' : '약 6~10분';
+  if (!confirm(`${targetCount}곡 (audio)\n예상: ${eta}\n\n곡이 완성되면 보관곡에서 체크해서 영상으로 만들 수 있습니다.\n시작할까요?`)) return;
 
   const buttons = document.querySelectorAll('[data-batch]');
   buttons.forEach(b => b.disabled = true);
@@ -531,6 +602,11 @@ async function onGenerate() {
   $('#btn-curator').addEventListener('click', onCurator);
   $('#btn-curator-apply').addEventListener('click', onCuratorApply);
   $('#btn-daily-trigger').addEventListener('click', onDailyTrigger);
+
+  // 보관곡 체크 → 영상 만들기 토글바
+  const btnAll = $('#btn-archive-all'); if (btnAll) btnAll.addEventListener('click', onArchivePickAll);
+  const btnNone = $('#btn-archive-none'); if (btnNone) btnNone.addEventListener('click', onArchivePickNone);
+  const btnMkVid = $('#btn-archive-make-videos'); if (btnMkVid) btnMkVid.addEventListener('click', onMakeVideosFromArchive);
 
   // 4개 배치 버튼 일반화
   document.querySelectorAll('[data-batch]').forEach(btn => {

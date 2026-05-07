@@ -38,12 +38,21 @@
   <section class="card">
     <div class="card-head">
       <h2>📦 보관된 곡</h2>
-      <p class="desc">완성된 곡은 본부에 자동 보관됩니다. 사이트에서 바로 듣고, 필요 없는 건 삭제할 수 있어요.</p>
+      <p class="desc">완성된 곡은 본부에 자동 보관됩니다. 들어보고 마음에 드는 곡만 체크해서 한 번에 영상으로 만들 수 있어요.</p>
     </div>
     <div class="card-body">
+      <div id="archive-toolbar" style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+        <button id="btn-archive-all" class="btn btn-sm" type="button">전체 선택</button>
+        <button id="btn-archive-none" class="btn btn-sm" type="button">선택 해제</button>
+        <span class="hint" id="archive-pick-hint" style="margin-left:auto;">체크된 곡: <strong id="archive-pick-count">0</strong></span>
+        <button id="btn-archive-make-videos" class="btn btn-primary btn-sm" type="button" disabled>
+          🎬 체크된 곡 영상 만들기
+        </button>
+      </div>
       <div id="archive-list">
         <div class="empty">불러오는 중…</div>
       </div>
+      <div id="archive-video-status" class="empty" style="margin-top:14px; display:none;"></div>
     </div>
   </section>
 
@@ -51,25 +60,18 @@
   <section class="card">
     <div class="card-head">
       <h2>자동 배치 — 곡 만들고 텔레그램 보고</h2>
-      <p class="desc">큐레이터가 이슈 → 작곡가가 가사 → Mureka가 곡 → (영상 옵션) → 텔레그램 전송. 한 번에 한 배치만 실행됩니다.</p>
+      <p class="desc">큐레이터가 이슈 → 작곡가가 가사 → Mureka가 곡 → 텔레그램 audio 전송 + 자동 보관.
+        영상은 위 <strong>📦 보관된 곡</strong>에서 마음에 드는 곡만 체크해서 만드세요.</p>
     </div>
     <div class="card-body">
       <div class="batch-buttons">
         <button class="btn" data-batch="1" data-video="false">
-          <div class="btn-title">▶ 1곡 (audio만)</div>
-          <div class="btn-sub">~1분 · 약 100원</div>
+          <div class="btn-title">▶ 1곡 의뢰 (audio)</div>
+          <div class="btn-sub">~1분 · n곡 옵션은 설정 따름</div>
         </button>
         <button class="btn" data-batch="6" data-video="false">
-          <div class="btn-title">▶ 6곡 (audio만)</div>
-          <div class="btn-sub">~6분 · 약 600원</div>
-        </button>
-        <button class="btn btn-primary" data-batch="1" data-video="true">
-          <div class="btn-title">🎬 1곡 → 영상 mp4</div>
-          <div class="btn-sub">~3분 · 약 100원</div>
-        </button>
-        <button class="btn btn-primary" data-batch="6" data-video="true">
-          <div class="btn-title">🎬 6곡 → 영상 mp4</div>
-          <div class="btn-sub">~15분 · 약 600원</div>
+          <div class="btn-title">▶ 6곡 의뢰 (audio)</div>
+          <div class="btn-sub">~6분 · 텔레그램 audio 보고</div>
         </button>
       </div>
       <div id="batch-status" class="empty" style="margin-top: 18px;">아직 실행하지 않았습니다.</div>

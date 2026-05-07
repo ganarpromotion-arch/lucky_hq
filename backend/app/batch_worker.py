@@ -284,7 +284,34 @@ async def _process_one(db: Session, batch: Batch, issue: str, idx: int) -> None:
     _audit(db, "music.generate_timeout", target=f"job:{job.id}")
     db.commit()
 
-async def _make_and_send_video(db: Session, batch: Batch, job: Job) -> None:
+async def make_video_for_archived_job(job_id: int) -> None:
+    """보관된 곡 1개를 영상으로 만들고 텔레그램으로 보낸다.
+    배치와 무관하게 사이트에서 사용자가 체크한 곡 처리용. 자체 DB 세션 사용."""
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if not job:
+            log.warning(f"make_video_for_archived_job: job {job_id} not found")
+            return
+        if job.status != "done":
+            log.warning(f"make_video_for_archived_job: job {job_id} status={job.status}, skip")
+            return
+        # batch 없이 영상 만들기 (Video.batch_id는 nullable)
+        await _make_and_send_video(db, batch=None, job=job)
+        db.commit()
+    except Exception as e:
+        log.exception(f"make_video_for_archived_job {job_id} crashed")
+        try:
+            _audit(db, "video.adhoc_crash", target=f"job:{job_id}",
+                   detail={"error": str(e)[:200]}, actor="video_editor")
+            db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+async def _make_and_send_video(db: Session, batch: Batch | None, job: Job) -> None:
     """곡 1개에 대한 mp4 만들고 텔레그램으로 전송.
 
     실패 시 audio만이라도 보내도록 폴백.
@@ -300,10 +327,10 @@ async def _make_and_send_video(db: Session, batch: Batch, job: Job) -> None:
         await telegram_agent.send_audio_for_job(db, job)
         return
 
-    # Video 레코드 생성
+    # Video 레코드 생성 (batch 없으면 batch_id=None)
     video = Video(
         job_id=job.id,
-        batch_id=batch.id,
+        batch_id=batch.id if batch else None,
         status="rendering",
     )
     db.add(video)

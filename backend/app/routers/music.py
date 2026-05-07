@@ -9,7 +9,7 @@
 Mureka 호출은 반드시 api_manager.call_api()를 통해서만 진행한다.
 """
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -248,6 +248,40 @@ def serve_audio(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "보관 파일 없음 (재생성 필요)")
     media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
     return FileResponse(path, media_type=media_type, filename=f"{job.id}_{path.name}")
+
+
+class MakeVideosRequest(BaseModel):
+    job_ids: list[int] = Field(..., min_length=1, max_length=20)
+
+
+@router.post("/archive/make-videos")
+def make_videos_from_archive(req: MakeVideosRequest, bg: BackgroundTasks,
+                             db: Session = Depends(get_db)):
+    """체크한 보관곡들을 영상으로 만들어 텔레그램에 순차 전송 (백그라운드).
+    주의: /archive/{job_id} 보다 먼저 등록되어야 'make-videos'가 int 파싱 안 됨."""
+    from ..batch_worker import make_video_for_archived_job
+
+    # 자격 검증: done + 보관 파일 있는 곡만
+    queued: list[int] = []
+    skipped: list[dict] = []
+    for jid in req.job_ids:
+        job = db.get(Job, jid)
+        if not job or job.deleted_at is not None:
+            skipped.append({"id": jid, "reason": "not_found"}); continue
+        if job.status != "done":
+            skipped.append({"id": jid, "reason": f"status={job.status}"}); continue
+        if not job.local_audio_path:
+            skipped.append({"id": jid, "reason": "not_archived"}); continue
+        bg.add_task(make_video_for_archived_job, jid)
+        queued.append(jid)
+
+    db.add(AuditLog(
+        actor="owner", action="archive.make_videos",
+        target=f"jobs:{','.join(str(i) for i in queued)}",
+        detail={"queued": queued, "skipped": skipped},
+    ))
+    db.commit()
+    return {"queued": len(queued), "queued_ids": queued, "skipped": skipped}
 
 
 @router.post("/archive/{job_id}")
