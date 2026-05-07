@@ -1,6 +1,6 @@
 # Railway nixpacks 빌드 설정
 # ffmpeg: 영상 인코딩 (영상 부서가 사용)
-# 한국어 폰트: Pillow가 영상 썸네일 텍스트 그릴 때 사용
+# 한국어 폰트는 레포에 번들됨 (backend/app/assets/fonts/NotoSansKR-Bold.otf)
 
 [phases.setup]
-nixPkgs = ["python3", "ffmpeg-full", "noto-fonts-cjk-sans"]
+nixPkgs = ["python3", "ffmpeg-full"]
