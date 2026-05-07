@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     mureka_api_key: str = ""
     mureka_base_url: str = "https://api.mureka.ai"
 
+    # Mureka 곡 생성 옵션 (DB Setting으로 덮어쓰기 가능)
+    # model: V7.6 ($0.03/song) → "auto" 또는 "mureka-7.5" / V8/V9 ($0.045/song) → "mureka-v8" | "mureka-v9"
+    # n: 한 번에 생성할 곡 수 (Mureka 기본 2, 최대 3)
+    # max_duration_sec: 곡 길이 상한 (Mureka 한도 5m30s = 330초)
+    mureka_model: str = "auto"
+    mureka_n: int = 2
+    mureka_max_duration_sec: int = 330
+
     anthropic_api_key: str = ""
     anthropic_base_url: str = "https://api.anthropic.com"
 

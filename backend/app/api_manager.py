@@ -105,6 +105,39 @@ async def call_api(
     return result
 
 
+def _resolve_int_setting(db: Session, db_key: str, default_value: int) -> int:
+    raw = _resolve_secret(db, db_key, "")
+    try:
+        return int(raw) if raw else int(default_value)
+    except (TypeError, ValueError):
+        return int(default_value)
+
+
+def _apply_mureka_defaults(db: Session, payload: dict, settings) -> dict:
+    """generate payload에 model/n/max_duration_sec 기본값 채우기.
+    DB Setting > 환경/기본값 순. 호출자가 이미 명시한 값은 유지."""
+    out = dict(payload or {})
+
+    # 모델: "auto" | "mureka-7.5" | "mureka-v8" | "mureka-v9" 등
+    if not out.get("model"):
+        model = _resolve_secret(db, "mureka_model", settings.mureka_model) or "auto"
+        out["model"] = model
+
+    # 곡 수: 1~3, 기본 2
+    if "n" not in out:
+        n = _resolve_int_setting(db, "mureka_n", settings.mureka_n)
+        out["n"] = max(1, min(3, n))
+
+    # 길이 상한: 0~330초 (5m30s)
+    if "max_duration_sec" not in out and "duration" not in out:
+        cap = _resolve_int_setting(db, "mureka_max_duration_sec", settings.mureka_max_duration_sec)
+        cap = max(0, min(330, cap))
+        if cap > 0:
+            out["max_duration_sec"] = cap
+
+    return out
+
+
 async def _call_mureka(
     db: Session, operation: str, payload: dict, settings, timeout: float
 ) -> dict[str, Any]:
@@ -121,6 +154,8 @@ async def _call_mureka(
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         if operation == "generate":
+            # 기본 옵션 병합: 호출자가 model/n/max_duration_sec 명시하지 않으면 설정값으로 채움
+            payload = _apply_mureka_defaults(db, payload, settings)
             # POST /v1/song/generate  (memory 기준)
             r = await client.post(f"{base}/v1/song/generate", headers=headers, json=payload)
         elif operation == "query":

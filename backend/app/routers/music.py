@@ -28,6 +28,10 @@ class GenerateRequest(BaseModel):
     lyrics: str = Field(..., min_length=1, max_length=4000)
     style: str = Field(default="pop", max_length=200)
     title: str = Field(default="", max_length=200)
+    # Mureka 옵션 — 비우면 settings 기본값 사용
+    model: str = Field(default="", max_length=64)            # "auto" | "mureka-7.5" | "mureka-v8" | "mureka-v9"
+    n: int = Field(default=0, ge=0, le=3)                    # 0 = settings 기본값 (보통 2)
+    max_duration_sec: int = Field(default=0, ge=0, le=330)   # 0 = settings 기본값 (최대 330 = 5m30s)
 
 
 class ComposePlanRequest(BaseModel):
@@ -90,7 +94,10 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
         department_slug="music",
         agent_slug="music_producer",
         status="pending",
-        input={"lyrics_len": len(req.lyrics), "style": req.style, "title": req.title},
+        input={
+            "lyrics_len": len(req.lyrics), "style": req.style, "title": req.title,
+            "model": req.model, "n": req.n, "max_duration_sec": req.max_duration_sec,
+        },
     )
     db.add(job)
     db.flush()
@@ -100,7 +107,13 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     db.commit()
 
     # 2) API 관리 직원 통해 Mureka 호출
-    payload = {"lyrics": req.lyrics, "style": req.style, "title": req.title}
+    payload: dict = {"lyrics": req.lyrics, "style": req.style, "title": req.title}
+    if req.model:
+        payload["model"] = req.model
+    if req.n:
+        payload["n"] = req.n
+    if req.max_duration_sec:
+        payload["max_duration_sec"] = req.max_duration_sec
     result = await call_api(
         db, provider="mureka", operation="generate",
         payload=payload, requester="music_producer",

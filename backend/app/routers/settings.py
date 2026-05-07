@@ -148,6 +148,63 @@ def get_catalog(db: Session = Depends(get_db)):
     return out
 
 
+# ── 음악제작 옵션 (비밀 아님) ─────────────────────────────
+# Mureka 곡 생성 튜닝 옵션. /secrets 페이지에서 별도 섹션으로 보여줌.
+MUSIC_OPTIONS_CATALOG: list[dict] = [
+    {
+        "key": "mureka_model",
+        "label": "Mureka 모델",
+        "description": "곡 생성 모델. V7.6($0.03/곡, 빠르고 저렴) | V8/V9($0.045/곡, 고품질). auto면 Mureka가 자동 선택.",
+        "type": "select",
+        "options": [
+            {"value": "auto", "label": "자동 (auto)"},
+            {"value": "mureka-7.5", "label": "V7.6 — $0.03/곡"},
+            {"value": "mureka-v8", "label": "V8 — $0.045/곡"},
+            {"value": "mureka-v9", "label": "V9 — $0.045/곡"},
+        ],
+        "default": "auto",
+    },
+    {
+        "key": "mureka_n",
+        "label": "한 번에 생성할 곡 수",
+        "description": "Mureka는 한 호출로 1~3곡을 만든다. 기본 2곡.",
+        "type": "int",
+        "min": 1,
+        "max": 3,
+        "default": 2,
+    },
+    {
+        "key": "mureka_max_duration_sec",
+        "label": "곡 길이 상한 (초)",
+        "description": "Mureka 한도는 5m30s = 330초. 0이면 모델 기본값 사용.",
+        "type": "int",
+        "min": 0,
+        "max": 330,
+        "default": 330,
+    },
+]
+
+
+@router.get("/music-options")
+def get_music_options(db: Session = Depends(get_db)):
+    """Mureka 튜닝 옵션 + 현재값."""
+    from ..config import get_settings as _get_app_settings
+    app_settings = _get_app_settings()
+    by_key = {r.key: r for r in db.query(Setting).all()}
+    out = []
+    for entry in MUSIC_OPTIONS_CATALOG:
+        row = by_key.get(entry["key"])
+        if row and row.value:
+            value = row.value
+            source = "db"
+        else:
+            env_value = getattr(app_settings, entry["key"], "")
+            value = str(env_value) if env_value not in ("", None) else str(entry.get("default", ""))
+            source = "env" if env_value not in ("", None) else "default"
+        out.append({**entry, "value": value, "source": source})
+    return out
+
+
 @router.get("/{key}")
 def get_setting(key: str, db: Session = Depends(get_db)):
     row = db.query(Setting).filter_by(key=key).first()
