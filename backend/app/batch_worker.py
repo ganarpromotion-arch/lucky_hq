@@ -29,6 +29,7 @@ from .api_manager import call_api
 from .songwriter import compose_plan as songwriter_compose
 from . import telegram_agent
 from . import video_maker
+from . import archiver
 
 log = logging.getLogger("lucky_hq.batch")
 
@@ -252,6 +253,17 @@ async def _process_one(db: Session, batch: Batch, issue: str, idx: int) -> None:
             _audit(db, "music.generate_done", target=f"job:{job.id}",
                    detail={"has_audio": bool(audio_url)})
             db.commit()
+
+            # 자동 다운로드 보관 (사이트 재생용)
+            if audio_url:
+                try:
+                    db.refresh(job)
+                    await archiver.download_and_archive(db, job)
+                except Exception as e:
+                    log.exception(f"archive failed for job {job.id}")
+                    _audit(db, "audio.archive_failed", target=f"job:{job.id}",
+                           detail={"error": str(e)[:200]}, actor="archiver")
+                    db.commit()
             return
 
         if mstatus in {"failed", "error", "rejected"}:

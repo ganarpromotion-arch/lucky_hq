@@ -10,6 +10,7 @@ Mureka 호출은 반드시 api_manager.call_api()를 통해서만 진행한다.
 """
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -18,6 +19,7 @@ from ..db import get_db
 from ..models import Job, Agent, AuditLog
 from ..api_manager import call_api
 from ..songwriter import compose_plan as songwriter_compose
+from .. import archiver
 
 router = APIRouter(prefix="/api/music", tags=["music"])
 
@@ -192,3 +194,66 @@ def _serialize_job(j: Job) -> dict:
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
     }
+
+
+# ── 곡 보관 (다운로드 + 사이트 재생 + 삭제) ─────────────────
+@router.get("/archive")
+def list_archived(limit: int = 50, db: Session = Depends(get_db)):
+    """보관된 곡 목록 (최신순)."""
+    rows = (
+        db.query(Job)
+        .filter(Job.local_audio_path != "", Job.deleted_at.is_(None))
+        .order_by(desc(Job.archived_at))
+        .limit(min(limit, 200))
+        .all()
+    )
+    return [
+        {
+            "id": j.id,
+            "title": (j.input or {}).get("title", f"#{j.id}"),
+            "issue": (j.input or {}).get("issue", ""),
+            "style": (j.input or {}).get("style", ""),
+            "mood": (j.input or {}).get("mood", ""),
+            "review_status": j.review_status,
+            "size_kb": j.local_audio_size // 1024 if j.local_audio_size else 0,
+            "audio_url": f"/api/music/audio/{j.id}",
+            "archived_at": j.archived_at.isoformat() if j.archived_at else None,
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+        }
+        for j in rows
+    ]
+
+
+@router.get("/audio/{job_id}")
+def serve_audio(job_id: int, db: Session = Depends(get_db)):
+    """보관된 audio 파일 서빙 (브라우저 재생용)."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "곡을 찾을 수 없음")
+    path = archiver.archived_path_for(job)
+    if not path:
+        raise HTTPException(404, "보관 파일 없음 (재생성 필요)")
+    media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
+    return FileResponse(path, media_type=media_type, filename=f"{job.id}_{path.name}")
+
+
+@router.post("/archive/{job_id}")
+async def archive_one(job_id: int, db: Session = Depends(get_db)):
+    """이미 만들어진 곡을 수동으로 보관 (다운로드 재시도)."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "곡을 찾을 수 없음")
+    if job.status != "done":
+        raise HTTPException(400, f"곡 상태가 done이 아님: {job.status}")
+    result = await archiver.download_and_archive(db, job)
+    return result
+
+
+@router.delete("/archive/{job_id}")
+def delete_archived(job_id: int, db: Session = Depends(get_db)):
+    """보관된 곡 삭제 (파일 + DB soft-delete)."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "곡을 찾을 수 없음")
+    archiver.delete_archived(db, job)
+    return {"ok": True}

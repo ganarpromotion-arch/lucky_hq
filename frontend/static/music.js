@@ -104,6 +104,55 @@ async function loadSettings() {
 }
 
 // ─────────────────────────────────────────────────
+// 보관곡 (다운로드된 audio 재생 + 삭제)
+// ─────────────────────────────────────────────────
+async function loadArchive() {
+  try {
+    const items = await fetchJSON('/api/music/archive?limit=20');
+    const wrap = $('#archive-list');
+    if (!items.length) {
+      wrap.innerHTML = '<div class="empty">아직 보관된 곡이 없습니다. 곡이 완성되면 자동으로 보관됩니다.</div>';
+      return;
+    }
+    const reviewLabel = (s) => ({
+      approved: '<span class="badge ok">채택</span>',
+      rejected: '<span class="badge fail">거절</span>',
+      pending_review: '<span class="badge tint">검토 대기</span>',
+    })[s] || '';
+    wrap.innerHTML = items.map(it => `
+      <div class="archive-item">
+        <div class="archive-head">
+          <div class="archive-title">
+            <strong>#${it.id} · ${it.title}</strong>
+            ${reviewLabel(it.review_status)}
+          </div>
+          <button class="btn btn-sm btn-danger" data-archive-del="${it.id}">삭제</button>
+        </div>
+        ${it.issue ? `<div class="archive-issue">${it.issue}</div>` : ''}
+        <div class="archive-meta">${it.style || ''} · ${it.size_kb}KB</div>
+        <audio controls preload="none" src="${it.audio_url}" style="width: 100%; margin-top: 8px;"></audio>
+      </div>
+    `).join('');
+    document.querySelectorAll('[data-archive-del]').forEach(btn => {
+      btn.addEventListener('click', () => onDeleteArchive(btn.dataset.archiveDel));
+    });
+  } catch (e) {
+    $('#archive-list').innerHTML = `<div class="empty">불러오기 실패: ${e.message}</div>`;
+  }
+}
+
+async function onDeleteArchive(jobId) {
+  if (!confirm(`곡 #${jobId}을(를) 삭제할까요? 파일과 보관 기록이 모두 사라집니다.`)) return;
+  try {
+    await fetchJSON(`/api/music/archive/${jobId}`, { method: 'DELETE' });
+    await loadArchive();
+    showToast(`곡 #${jobId} 삭제됨`);
+  } catch (e) {
+    showToast('삭제 실패: ' + e.message);
+  }
+}
+
+// ─────────────────────────────────────────────────
 // 자동 배치 (테스트 버튼)
 // ─────────────────────────────────────────────────
 let activeBatchId = null;
@@ -355,8 +404,10 @@ async function onGenerate() {
   loadAgents();
   loadSettings();
   loadLatestBatch();
+  loadArchive();
   refreshJobs();
   setInterval(loadAgents, 8000);
   setInterval(loadSettings, 12000);
+  setInterval(loadArchive, 15000);
   setInterval(refreshJobs, 5000);
 })();

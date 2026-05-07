@@ -68,6 +68,12 @@ class Job(Base):
     review_status = Column(String(32), default="none")
     telegram_message_id = Column(Integer, nullable=True)  # owner 채널에 보낸 메시지 id
 
+    # 로컬 보관 (사이트에서 재생용)
+    local_audio_path = Column(String(512), default="")    # 다운로드된 mp3/wav 경로
+    local_audio_size = Column(Integer, default=0)         # bytes
+    archived_at = Column(DateTime, nullable=True)         # 다운로드 완료 시각
+    deleted_at = Column(DateTime, nullable=True)          # 삭제 시각 (소프트 딜리트)
+
 
 class Batch(Base):
     """배치 작업 단위 — 곡 N개 묶음.
