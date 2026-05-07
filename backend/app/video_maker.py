@@ -347,8 +347,11 @@ async def _probe_duration(path: Path) -> float:
 
 
 async def make_video_for_job(job_id: int, audio_url: str, title: str,
-                             mood: str = "modern", subtitle: str = "") -> dict:
+                             mood: str = "modern", subtitle: str = "",
+                             seed: int | None = None) -> dict:
     """곡 1개에 대한 mp4 생성 — 다운로드 + 이미지 + 인코딩.
+
+    seed가 주어지면 미리보기 단계와 동일한 이미지를 재현한다.
 
     Returns: {ok, video_path, image_path, duration_sec, file_size, error}
     """
@@ -360,8 +363,8 @@ async def make_video_for_job(job_id: int, audio_url: str, title: str,
     video_path = work / "out.mp4"
 
     try:
-        # 1. 정지 이미지
-        make_thumbnail(image_path, title=title, mood=mood, subtitle=subtitle)
+        # 1. 정지 이미지 (seed 지정 시 미리보기와 동일)
+        make_thumbnail(image_path, title=title, mood=mood, subtitle=subtitle, seed=seed)
 
         # 2. 오디오 다운로드
         await download_audio(audio_url, audio_path)

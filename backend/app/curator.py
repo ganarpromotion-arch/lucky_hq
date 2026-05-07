@@ -17,8 +17,10 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from .api_manager import call_api
 from .config import get_settings
+from .models import CuratorLesson
 
 log = logging.getLogger("lucky_hq.curator")
 
@@ -130,11 +132,48 @@ def _fallback_options() -> dict:
     }
 
 
+def _build_lessons_block(db: Session) -> tuple[str, list[int]]:
+    """active 큐레이터 교육 자료를 system prompt에 끼워 넣을 텍스트로 변환.
+    weight 큰 것부터, 각 kind별 그룹핑. 사용된 lesson id 목록도 반환 (used_count 갱신용)."""
+    rows = (
+        db.query(CuratorLesson)
+        .filter(CuratorLesson.active.is_(True))
+        .order_by(desc(CuratorLesson.weight), desc(CuratorLesson.id))
+        .limit(40)
+        .all()
+    )
+    if not rows:
+        return "", []
+    by_kind: dict[str, list[CuratorLesson]] = {}
+    for r in rows:
+        by_kind.setdefault(r.kind, []).append(r)
+
+    titles = {
+        "prefer":  "owner가 좋아하는 방향 (반드시 반영)",
+        "avoid":   "owner가 싫어하는 패턴 (피할 것)",
+        "example": "참고 예시 (이런 결과를 더)",
+        "rule":    "원칙 (어기면 안 됨)",
+    }
+    parts = ["", "── 큐레이터 교육 메모 ──"]
+    for kind in ("rule", "avoid", "prefer", "example"):
+        items = by_kind.get(kind, [])
+        if not items:
+            continue
+        parts.append(f"\n[{titles.get(kind, kind)}]")
+        for r in items:
+            star = "★" * max(1, min(5, r.weight or 1))
+            parts.append(f"- ({star}) {r.text.strip()[:300]}")
+    return "\n".join(parts), [r.id for r in rows]
+
+
 async def propose_options(db: Session) -> dict:
-    """5x3 안 제안 (Gemini → 폴백)."""
+    """5x3 안 제안 (Gemini → 폴백). 큐레이터 교육 메모 자동 주입."""
     settings = get_settings()
     today = datetime.now().strftime("%Y년 %m월 %d일 (%a)")
     system = CURATOR_SYSTEM.format(today=today)
+    lessons_block, lesson_ids = _build_lessons_block(db)
+    if lessons_block:
+        system = system + "\n" + lessons_block
 
     payload = {
         "model": "gemini-2.5-flash",
@@ -183,12 +222,24 @@ async def propose_options(db: Session) -> dict:
             clean.append(fallback_arr[len(clean) % len(fallback_arr)])
         return clean
 
+    # 교육 메모 사용 카운트 + 마지막 사용 시각 업데이트
+    if lesson_ids:
+        try:
+            now = datetime.utcnow()
+            for r in db.query(CuratorLesson).filter(CuratorLesson.id.in_(lesson_ids)).all():
+                r.used_count = (r.used_count or 0) + 1
+                r.last_used_at = now
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return {
         "languages": normalize(langs, fb["languages"]),
         "moods": normalize(moods, fb["moods"]),
         "keywords": normalize(keywords, fb["keywords"]),
         "source": "llm",
         "today": today,
+        "lessons_applied": len(lesson_ids),
     }
 
 

@@ -250,8 +250,136 @@ function refreshArchivePickCount() {
   const n = archivePicked.size;
   const el = $('#archive-pick-count');
   if (el) el.textContent = String(n);
-  const btn = $('#btn-archive-make-videos');
+  const btn = $('#btn-archive-preview');
   if (btn) btn.disabled = (n === 0);
+}
+
+// 미리보기 상태: { [jobId]: { seed, imageUrl, title, mood } }
+const thumbPreviews = {};
+
+async function fetchThumbPreview(jobId, seed) {
+  const body = (seed === undefined || seed === null) ? {} : { seed };
+  return await fetchJSON(`/api/music/archive/thumbnail-preview/${jobId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+function renderThumbPreviews() {
+  const grid = $('#thumb-preview-grid');
+  if (!grid) return;
+  const ids = Object.keys(thumbPreviews);
+  if (!ids.length) {
+    grid.innerHTML = '<div class="empty">미리보기를 만드는 중…</div>';
+    return;
+  }
+  grid.innerHTML = ids.map(jid => {
+    const p = thumbPreviews[jid];
+    return `
+      <div class="thumb-card" data-thumb-job="${jid}" style="background:var(--surface); border-radius:var(--r-sm); overflow:hidden;">
+        <div style="aspect-ratio:9/16; background:#000;">
+          <img src="${p.imageUrl}" alt="thumb #${jid}" style="width:100%; height:100%; object-fit:cover; display:block;">
+        </div>
+        <div style="padding:8px 10px; display:flex; gap:8px; align-items:center; justify-content:space-between;">
+          <div style="font-size:12px; line-height:1.3;">
+            <strong>#${jid}</strong> · ${p.title || ''}<br>
+            <span class="hint">${p.mood || ''} · seed ${p.seed}</span>
+          </div>
+          <button class="btn btn-sm" type="button" data-thumb-reroll="${jid}" title="다시 뽑기">↻</button>
+        </div>
+      </div>`;
+  }).join('');
+  document.querySelectorAll('[data-thumb-reroll]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const jid = btn.dataset.thumbReroll;
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const p = await fetchThumbPreview(parseInt(jid, 10), null);
+        thumbPreviews[jid] = {
+          seed: p.seed,
+          imageUrl: p.image_url,
+          title: p.title, mood: p.mood,
+        };
+        renderThumbPreviews();
+      } catch (e) {
+        showToast('재생성 실패: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
+  });
+}
+
+async function onPreviewThumbnails() {
+  if (!archivePicked.size) return;
+  const ids = [...archivePicked].map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+  // 이전 미리보기 초기화
+  Object.keys(thumbPreviews).forEach(k => delete thumbPreviews[k]);
+  ids.forEach(id => { thumbPreviews[id] = { seed: 0, imageUrl: '', title: '…', mood: '' }; });
+
+  $('#thumb-preview-panel').style.display = '';
+  $('#thumb-preview-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  renderThumbPreviews();
+
+  // 병렬 fetch (각 곡당 PIL 한 번)
+  await Promise.all(ids.map(async id => {
+    try {
+      const p = await fetchThumbPreview(id, null);
+      thumbPreviews[id] = {
+        seed: p.seed, imageUrl: p.image_url,
+        title: p.title, mood: p.mood,
+      };
+    } catch (e) {
+      thumbPreviews[id] = { seed: 0, imageUrl: '', title: '실패', mood: e.message };
+    }
+  }));
+  renderThumbPreviews();
+}
+
+function onCancelPreview() {
+  $('#thumb-preview-panel').style.display = 'none';
+  Object.keys(thumbPreviews).forEach(k => delete thumbPreviews[k]);
+}
+
+async function onEncodeWithPreviews() {
+  const picks = Object.entries(thumbPreviews)
+    .filter(([, v]) => v && v.seed)
+    .map(([jid, v]) => ({ job_id: parseInt(jid, 10), seed: v.seed }));
+  if (!picks.length) {
+    showToast('미리보기가 아직 준비되지 않았습니다');
+    return;
+  }
+  if (!confirm(`${picks.length}곡을 보이는 표지 그대로 영상으로 만듭니다.\n곡당 약 30~60초 인코딩.\n\n진행할까요?`)) return;
+
+  const btn = $('#btn-thumb-encode');
+  const status = $('#archive-video-status');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '의뢰 중…';
+  status.style.display = '';
+  status.className = '';
+  status.textContent = `🎬 ${picks.length}곡 영상 인코딩 시작 — 텔레그램에 순차 전송됩니다.`;
+
+  try {
+    const res = await fetchJSON('/api/music/archive/make-videos', {
+      method: 'POST',
+      body: JSON.stringify({ picks }),
+    });
+    status.innerHTML = `✓ ${res.queued}곡 큐 등록 완료. 인코딩 끝나면 다운로드 버튼이 활성화됩니다.`;
+    archivePicked.clear();
+    onArchivePickNone();
+    onCancelPreview();
+    setTimeout(loadArchive, 600);
+  } catch (e) {
+    status.className = 'empty';
+    status.textContent = '✗ 실패: ' + e.message;
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+    refreshArchivePickCount();
+  }
 }
 
 async function loadArchive() {
@@ -350,36 +478,97 @@ function onArchivePickNone() {
   refreshArchivePickCount();
 }
 
-async function onMakeVideosFromArchive() {
-  if (!archivePicked.size) return;
-  const ids = [...archivePicked].map(s => parseInt(s, 10)).filter(n => !isNaN(n));
-  if (!confirm(`${ids.length}곡을 영상으로 만들고 텔레그램으로 보냅니다.\n곡당 약 30~60초 인코딩 시간이 듭니다.\n\n진행할까요?`)) return;
+// ─────────────────────────────────────────────────
+// 큐레이터 교육 (lessons)
+// ─────────────────────────────────────────────────
+const LESSON_KIND_LABEL = {
+  prefer: '🟢 좋아함',
+  avoid: '🔴 피할 것',
+  example: '⭐ 예시',
+  rule: '📌 원칙',
+};
 
-  const btn = $('#btn-archive-make-videos');
-  const status = $('#archive-video-status');
-  btn.disabled = true;
-  const orig = btn.textContent;
-  btn.textContent = '의뢰 중…';
-  status.style.display = '';
-  status.className = '';
-  status.textContent = `🎬 ${ids.length}곡 영상 인코딩 시작 — 텔레그램에 순차 전송됩니다.`;
-
+async function loadLessons() {
+  const wrap = $('#lesson-list');
+  if (!wrap) return;
   try {
-    const res = await fetchJSON('/api/music/archive/make-videos', {
-      method: 'POST',
-      body: JSON.stringify({ job_ids: ids }),
+    const rows = await fetchJSON('/api/music/curator/lessons');
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="empty">아직 교육 자료가 없습니다. 위에서 한 줄씩 추가하세요.</div>';
+      return;
+    }
+    wrap.innerHTML = rows.map(r => `
+      <div class="lesson-item" style="display:grid; grid-template-columns: 110px 1fr 70px 60px 70px; gap:8px; align-items:center; padding:8px 10px; border-radius:var(--r-sm); background:var(--surface-soft); margin-bottom:6px;">
+        <span class="badge ${r.active ? 'tint' : ''}">${LESSON_KIND_LABEL[r.kind] || r.kind}</span>
+        <span style="font-size:13px;">${r.text}</span>
+        <span class="hint" title="강조 강도">${'★'.repeat(r.weight)}</span>
+        <span class="hint" title="이번까지 사용 횟수">×${r.used_count}</span>
+        <span style="display:flex; gap:4px; justify-content:flex-end;">
+          <button class="btn btn-sm" type="button" data-lesson-toggle="${r.id}" data-active="${r.active ? 1 : 0}"
+                  title="${r.active ? '비활성화' : '활성화'}">${r.active ? '⏸' : '▶'}</button>
+          <button class="btn btn-sm btn-danger" type="button" data-lesson-del="${r.id}">🗑</button>
+        </span>
+      </div>
+    `).join('');
+    document.querySelectorAll('[data-lesson-del]').forEach(btn => {
+      btn.addEventListener('click', () => onDeleteLesson(btn.dataset.lessonDel));
     });
-    status.innerHTML = `✓ ${res.queued}곡 큐 등록 완료. 인코딩 끝나면 다운로드 버튼이 활성화됩니다 (텔레그램에도 전송).`;
-    archivePicked.clear();
-    onArchivePickNone();
-    // 즉시 새로고침 → "인코딩 중" 뱃지 + 자동 폴링 시작
-    setTimeout(loadArchive, 600);
+    document.querySelectorAll('[data-lesson-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => onToggleLesson(btn.dataset.lessonToggle, btn.dataset.active === '1'));
+    });
   } catch (e) {
-    status.className = 'empty';
-    status.textContent = '✗ 실패: ' + e.message;
-  } finally {
-    btn.textContent = orig;
-    refreshArchivePickCount();
+    wrap.innerHTML = `<div class="empty">불러오기 실패: ${e.message}</div>`;
+  }
+}
+
+async function onAddLesson() {
+  const text = $('#lesson-text').value.trim();
+  if (!text) { showToast('내용을 입력하세요'); return; }
+  const body = {
+    kind: $('#lesson-kind').value,
+    text,
+    weight: parseInt($('#lesson-weight').value, 10) || 1,
+    active: $('#lesson-active').checked,
+  };
+  try {
+    await fetchJSON('/api/music/curator/lessons', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    $('#lesson-text').value = '';
+    showToast('교육 자료 추가됨');
+    await loadLessons();
+  } catch (e) {
+    showToast('추가 실패: ' + e.message);
+  }
+}
+
+async function onDeleteLesson(id) {
+  if (!confirm(`교육 자료 #${id}을(를) 삭제할까요?`)) return;
+  try {
+    await fetchJSON(`/api/music/curator/lessons/${id}`, { method: 'DELETE' });
+    await loadLessons();
+  } catch (e) {
+    showToast('삭제 실패: ' + e.message);
+  }
+}
+
+async function onToggleLesson(id, currentlyActive) {
+  // 현재 row를 다시 읽지 않고 PUT — 서버는 전체 필드 받아야 하므로 list에서 가져오기
+  try {
+    const rows = await fetchJSON('/api/music/curator/lessons');
+    const r = rows.find(x => x.id === parseInt(id, 10));
+    if (!r) return;
+    await fetchJSON(`/api/music/curator/lessons/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        kind: r.kind, text: r.text, weight: r.weight,
+        active: !currentlyActive,
+      }),
+    });
+    await loadLessons();
+  } catch (e) {
+    showToast('변경 실패: ' + e.message);
   }
 }
 
@@ -635,10 +824,12 @@ async function onGenerate() {
   $('#btn-curator-apply').addEventListener('click', onCuratorApply);
   $('#btn-daily-trigger').addEventListener('click', onDailyTrigger);
 
-  // 보관곡 체크 → 영상 만들기 토글바
+  // 보관곡 체크 → 미리보기 → 영상 만들기 토글바
   const btnAll = $('#btn-archive-all'); if (btnAll) btnAll.addEventListener('click', onArchivePickAll);
   const btnNone = $('#btn-archive-none'); if (btnNone) btnNone.addEventListener('click', onArchivePickNone);
-  const btnMkVid = $('#btn-archive-make-videos'); if (btnMkVid) btnMkVid.addEventListener('click', onMakeVideosFromArchive);
+  const btnPrev = $('#btn-archive-preview'); if (btnPrev) btnPrev.addEventListener('click', onPreviewThumbnails);
+  const btnEnc = $('#btn-thumb-encode'); if (btnEnc) btnEnc.addEventListener('click', onEncodeWithPreviews);
+  const btnPCancel = $('#btn-thumb-cancel'); if (btnPCancel) btnPCancel.addEventListener('click', onCancelPreview);
 
   // 4개 배치 버튼 일반화
   document.querySelectorAll('[data-batch]').forEach(btn => {
@@ -649,10 +840,16 @@ async function onGenerate() {
     });
   });
 
+  // 큐레이터 교육
+  const btnLessonAdd = $('#btn-lesson-add'); if (btnLessonAdd) btnLessonAdd.addEventListener('click', onAddLesson);
+  const lessonTxt = $('#lesson-text');
+  if (lessonTxt) lessonTxt.addEventListener('keydown', e => { if (e.key === 'Enter') onAddLesson(); });
+
   loadAgents();
   loadSettings();
   loadLatestBatch();
   loadArchive();
+  loadLessons();
   loadDailyStatus();
   refreshJobs();
   setInterval(loadAgents, 8000);

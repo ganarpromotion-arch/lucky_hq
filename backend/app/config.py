@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     telegram_api_base: str = "https://api.telegram.org"
 
+    # YouTube 업로드 정책 (구현 예정)
+    # IMPORTANT: 영상 설명(description)은 영어로만 작성한다.
+    # 제목/태그는 곡의 언어를 따라가지만 description은 무조건 영어 — 글로벌 검색 노출 + 동일 톤 유지.
+    # 구현 위치: 추가될 youtube_uploader.py / video_caption.py 에서 이 플래그를 강제 적용.
+    youtube_description_language: str = "en"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from ..db import get_db
-from ..models import Job, Agent, AuditLog, Video
+from ..models import Job, Agent, AuditLog, Video, CuratorLesson
 from ..api_manager import call_api
 from ..songwriter import compose_plan as songwriter_compose
 from .. import archiver
@@ -303,8 +303,15 @@ def serve_audio(job_id: int, db: Session = Depends(get_db)):
     return FileResponse(path, media_type=media_type, filename=f"{job.id}_{path.name}")
 
 
+class VideoPick(BaseModel):
+    job_id: int
+    seed: int | None = None  # 미리보기에서 고른 시드. 없으면 즉석 랜덤.
+
+
 class MakeVideosRequest(BaseModel):
-    job_ids: list[int] = Field(..., min_length=1, max_length=20)
+    # 둘 중 하나만 채워도 됨 (picks 우선)
+    job_ids: list[int] = Field(default_factory=list, max_length=20)
+    picks: list[VideoPick] = Field(default_factory=list, max_length=20)
 
 
 @router.post("/archive/make-videos")
@@ -314,10 +321,19 @@ def make_videos_from_archive(req: MakeVideosRequest, bg: BackgroundTasks,
     주의: /archive/{job_id} 보다 먼저 등록되어야 'make-videos'가 int 파싱 안 됨."""
     from ..batch_worker import make_video_for_archived_job
 
+    # picks 우선, 없으면 job_ids만
+    pairs: list[tuple[int, int | None]]
+    if req.picks:
+        pairs = [(p.job_id, p.seed) for p in req.picks]
+    else:
+        pairs = [(j, None) for j in req.job_ids]
+    if not pairs:
+        raise HTTPException(400, "job_ids 또는 picks 중 하나는 필요")
+
     # 자격 검증: done + 보관 파일 있는 곡만
     queued: list[int] = []
     skipped: list[dict] = []
-    for jid in req.job_ids:
+    for jid, seed in pairs:
         job = db.get(Job, jid)
         if not job or job.deleted_at is not None:
             skipped.append({"id": jid, "reason": "not_found"}); continue
@@ -325,16 +341,69 @@ def make_videos_from_archive(req: MakeVideosRequest, bg: BackgroundTasks,
             skipped.append({"id": jid, "reason": f"status={job.status}"}); continue
         if not job.local_audio_path:
             skipped.append({"id": jid, "reason": "not_archived"}); continue
-        bg.add_task(make_video_for_archived_job, jid)
+        bg.add_task(make_video_for_archived_job, jid, seed)
         queued.append(jid)
 
     db.add(AuditLog(
         actor="owner", action="archive.make_videos",
         target=f"jobs:{','.join(str(i) for i in queued)}",
-        detail={"queued": queued, "skipped": skipped},
+        detail={"queued": queued, "skipped": skipped,
+                "with_seed": bool(req.picks)},
     ))
     db.commit()
     return {"queued": len(queued), "queued_ids": queued, "skipped": skipped}
+
+
+# ── 썸네일 미리보기 (영상 인코딩 전 단계) ───────────────────
+class ThumbnailPreviewRequest(BaseModel):
+    seed: int | None = None  # 없으면 랜덤 새로 생성
+
+
+@router.post("/archive/thumbnail-preview/{job_id}")
+def thumbnail_preview(job_id: int, req: ThumbnailPreviewRequest,
+                      db: Session = Depends(get_db)):
+    """곡의 정지 이미지 1장만 빠르게 만들어서 보여준다 (영상 인코딩 X).
+    seed를 다시 호출해서 받으면 다른 이미지가 나온다.
+    이 seed를 make-videos picks에 넣으면 동일한 이미지로 영상이 만들어진다."""
+    from .. import video_maker as _vm
+    import random as _r
+
+    job = db.get(Job, job_id)
+    if not job or job.deleted_at is not None:
+        raise HTTPException(404, "곡을 찾을 수 없음")
+    if job.status != "done" or not job.local_audio_path:
+        raise HTTPException(400, "보관된 곡이 아님 — 영상 미리보기 불가")
+
+    seed = req.seed if (req.seed is not None) else _r.randint(0, 99_999_999)
+    title = (job.input or {}).get("title", f"#{job_id}")
+    mood = (job.input or {}).get("mood", "modern") or "modern"
+    subtitle = (job.input or {}).get("issue", "")
+
+    work = _vm.WORK_DIR / f"job_{job_id}"
+    work.mkdir(parents=True, exist_ok=True)
+    out_path = work / f"preview_{seed}.png"
+    if not out_path.exists():
+        _vm.make_thumbnail(out_path, title=title, mood=mood,
+                           subtitle=subtitle, seed=seed)
+
+    return {
+        "job_id": job_id,
+        "seed": seed,
+        "title": title,
+        "mood": mood,
+        "image_url": f"/api/music/archive/thumbnail-image/{job_id}/{seed}",
+    }
+
+
+@router.get("/archive/thumbnail-image/{job_id}/{seed}")
+def thumbnail_image(job_id: int, seed: int, db: Session = Depends(get_db)):
+    """미리 만든 정지 이미지 PNG 서빙 (브라우저 표시용)."""
+    from .. import video_maker as _vm
+    p = _vm.WORK_DIR / f"job_{job_id}" / f"preview_{seed}.png"
+    if not p.exists():
+        raise HTTPException(404, "이미지 없음 — 먼저 thumbnail-preview를 호출하세요")
+    return FileResponse(p, media_type="image/png",
+                        filename=f"{job_id}_thumb_{seed}.png")
 
 
 @router.post("/archive/{job_id}")
@@ -366,6 +435,69 @@ async def curator_options(db: Session = Depends(get_db)):
     Gemini로 오늘 트렌드/계절 반영. 실패 시 폴백."""
     from ..curator import propose_options
     return await propose_options(db)
+
+
+# ── 큐레이터 교육 (lesson) ───────────────────────────────
+class CuratorLessonUpsert(BaseModel):
+    kind: str = Field(default="prefer", pattern="^(prefer|avoid|example|rule)$")
+    text: str = Field(..., min_length=1, max_length=600)
+    weight: int = Field(default=1, ge=1, le=5)
+    active: bool = True
+
+
+@router.get("/curator/lessons")
+def list_curator_lessons(active_only: bool = False, db: Session = Depends(get_db)):
+    q = db.query(CuratorLesson)
+    if active_only:
+        q = q.filter(CuratorLesson.active.is_(True))
+    rows = q.order_by(desc(CuratorLesson.weight), desc(CuratorLesson.id)).limit(200).all()
+    return [{
+        "id": r.id, "kind": r.kind, "text": r.text,
+        "weight": r.weight, "active": bool(r.active),
+        "used_count": r.used_count or 0,
+        "last_used_at": r.last_used_at.isoformat() if r.last_used_at else None,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+
+
+@router.post("/curator/lessons")
+def create_curator_lesson(body: CuratorLessonUpsert, db: Session = Depends(get_db)):
+    row = CuratorLesson(kind=body.kind, text=body.text.strip(),
+                        weight=body.weight, active=body.active, created_by="owner")
+    db.add(row)
+    db.add(AuditLog(actor="owner", action="curator.lesson.create",
+                    target=f"lesson:new", detail={"kind": body.kind, "weight": body.weight}))
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "ok": True}
+
+
+@router.put("/curator/lessons/{lesson_id}")
+def update_curator_lesson(lesson_id: int, body: CuratorLessonUpsert,
+                          db: Session = Depends(get_db)):
+    row = db.get(CuratorLesson, lesson_id)
+    if not row:
+        raise HTTPException(404, "교육 자료 없음")
+    row.kind = body.kind
+    row.text = body.text.strip()
+    row.weight = body.weight
+    row.active = body.active
+    db.add(AuditLog(actor="owner", action="curator.lesson.update",
+                    target=f"lesson:{lesson_id}",
+                    detail={"kind": body.kind, "weight": body.weight, "active": body.active}))
+    db.commit()
+    return {"id": row.id, "ok": True}
+
+
+@router.delete("/curator/lessons/{lesson_id}")
+def delete_curator_lesson(lesson_id: int, db: Session = Depends(get_db)):
+    row = db.get(CuratorLesson, lesson_id)
+    if row:
+        db.delete(row)
+        db.add(AuditLog(actor="owner", action="curator.lesson.delete",
+                        target=f"lesson:{lesson_id}"))
+        db.commit()
+    return {"ok": True}
 
 
 # ── 일일 큐레이터 수동 트리거 ────────────────────────────

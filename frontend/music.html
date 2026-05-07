@@ -45,13 +45,27 @@
         <button id="btn-archive-all" class="btn btn-sm" type="button">전체 선택</button>
         <button id="btn-archive-none" class="btn btn-sm" type="button">선택 해제</button>
         <span class="hint" id="archive-pick-hint" style="margin-left:auto;">체크된 곡: <strong id="archive-pick-count">0</strong></span>
-        <button id="btn-archive-make-videos" class="btn btn-primary btn-sm" type="button" disabled>
-          🎬 체크된 곡 영상 만들기
+        <button id="btn-archive-preview" class="btn btn-primary btn-sm" type="button" disabled>
+          🖼️ 이미지 미리보기 →
         </button>
       </div>
       <div id="archive-list">
         <div class="empty">불러오는 중…</div>
       </div>
+
+      <!-- 미리보기 패널 (이미지 확인 + 다시 뽑기 → 영상 인코딩) -->
+      <div id="thumb-preview-panel" style="display:none; margin-top:18px; padding:16px; background:var(--surface-soft); border-radius:var(--r-md);">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+          <strong>🖼 영상 표지 미리보기</strong>
+          <span class="hint">마음에 들면 [영상 인코딩 시작], 별로면 곡마다 ↻ 눌러서 다시 뽑기</span>
+          <span style="margin-left:auto; display:flex; gap:8px;">
+            <button id="btn-thumb-cancel" class="btn btn-sm" type="button">취소</button>
+            <button id="btn-thumb-encode" class="btn btn-primary btn-sm" type="button">🎬 이대로 영상 만들기</button>
+          </span>
+        </div>
+        <div id="thumb-preview-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:14px;"></div>
+      </div>
+
       <div id="archive-video-status" class="empty" style="margin-top:14px; display:none;"></div>
     </div>
   </section>
@@ -105,6 +119,40 @@
     </div>
     <div class="card-body">
       <div id="daily-status" class="empty">상태 확인 중…</div>
+    </div>
+  </section>
+
+  <!-- 큐레이터 교육 (lessons) -->
+  <section class="card">
+    <div class="card-head">
+      <h2>🎓 큐레이터 교육</h2>
+      <p class="desc">큐레이터에게 owner 취향을 가르칩니다. 여기 적은 메모는 다음 5x3 안 / 일일 발송 시 system prompt에 자동 주입됩니다.</p>
+    </div>
+    <div class="card-body">
+      <div style="display:grid; grid-template-columns: 130px 1fr 90px 70px auto; gap:8px; align-items:center; margin-bottom:14px;">
+        <select id="lesson-kind" class="input">
+          <option value="prefer">좋아함 (prefer)</option>
+          <option value="avoid">피할 것 (avoid)</option>
+          <option value="example">예시 (example)</option>
+          <option value="rule">원칙 (rule)</option>
+        </select>
+        <input id="lesson-text" class="input" type="text" maxlength="600"
+               placeholder="예: 진솔정 키워드는 한 주에 1번만. 영어 후크는 짧고 굵게.">
+        <select id="lesson-weight" class="input" title="강조 강도 ★1~5">
+          <option value="1">★ 1</option>
+          <option value="2">★ 2</option>
+          <option value="3" selected>★ 3</option>
+          <option value="4">★ 4</option>
+          <option value="5">★ 5</option>
+        </select>
+        <label style="display:flex; gap:6px; align-items:center; font-size:13px;">
+          <input id="lesson-active" type="checkbox" checked> 활성
+        </label>
+        <button id="btn-lesson-add" class="btn btn-primary btn-sm" type="button">＋ 추가</button>
+      </div>
+      <div id="lesson-list">
+        <div class="empty">불러오는 중…</div>
+      </div>
     </div>
   </section>
 
