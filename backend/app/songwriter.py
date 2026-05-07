@@ -392,19 +392,72 @@ def _extract_keyword(text: str) -> str:
     return kw
 
 
+# ── 영어 룰 폴백 템플릿 ─────────────────────────────────
+ENGLISH_LYRIC_TEMPLATES = {
+    "warm":      "[Verse 1]\nWarm light on a {topic} day\nMemories softly fade\nI hold this moment near\n\n[Chorus]\n{topic}, you are my own\n{topic}, never alone\nIn the glow we have found\n\n[Verse 2]\nSlow steps through the haze\nSimple things still amaze\nI breathe and I stay\n\n[Chorus]\n{topic}, you are my own\n{topic}, never alone\nIn the glow we have found",
+    "bright":    "[Verse 1]\nThe sun calls my name today\nA bright {topic} on the way\nNothing can hold me down\n\n[Chorus]\nRunning toward the light\n{topic} feels just right\nThis is our time, our time\n\n[Verse 2]\nFootsteps light on the ground\nLaughter is the only sound\nWe were made for this\n\n[Chorus]\nRunning toward the light\n{topic} feels just right\nThis is our time, our time",
+    "emotional": "[Verse 1]\nQuiet nights remind me of {topic}\nShadows on the wall stay\nA whisper from the past\n\n[Chorus]\nIf only you knew, {topic}\nThe words I never said\nThey echo still, still echo\n\n[Verse 2]\nRain against the glass tonight\nMemories take their flight\nI hold them close and let go\n\n[Chorus]\nIf only you knew, {topic}\nThe words I never said\nThey echo still, still echo",
+    "energetic": "[Verse 1]\nUp and ready, no looking back\n{topic} is the only track\nWe go all in tonight\n\n[Chorus]\nLet's go, let's go, never stop\n{topic} taking us to the top\nFeel it now, feel it now\n\n[Verse 2]\nHeart racing, the world is ours\nCounting down the hours\nNothing can slow us down\n\n[Chorus]\nLet's go, let's go, never stop\n{topic} taking us to the top\nFeel it now, feel it now",
+    "cozy":      "[Verse 1]\nA quiet evening with {topic}\nSteam rising slow and warm\nThe day melts away\n\n[Chorus]\nStay with me, {topic}\nLet the world be small tonight\nJust you, just me, just this\n\n[Verse 2]\nSoft music in the corner\nA blanket around our shoulders\nNothing else we need\n\n[Chorus]\nStay with me, {topic}\nLet the world be small tonight\nJust you, just me, just this",
+    "modern":    "[Verse 1]\nCity lights and {topic} dreams\nNothing's quite the way it seems\nWe move through the haze\n\n[Chorus]\n{topic}, hold the line\n{topic}, take your time\nWe'll find our way home\n\n[Verse 2]\nLate night, the streets still alive\nWe keep moving, we survive\nOne step, then another\n\n[Chorus]\n{topic}, hold the line\n{topic}, take your time\nWe'll find our way home",
+}
+
+ENGLISH_TITLE_PATTERNS = {
+    "warm":      ["Warm {kw}", "Hold On"],
+    "bright":    ["Toward the Light", "Bright Days"],
+    "emotional": ["If Only", "Quiet Echo"],
+    "energetic": ["No Looking Back", "Top of the World"],
+    "cozy":      ["Stay With Me", "Small Tonight"],
+    "modern":    ["{kw} Dreams", "Hold the Line"],
+}
+
+
+def _detect_language(issue: str) -> str:
+    """이슈에서 언어 옵션 탐지. 'korean' | 'english' | 'mixed'"""
+    lo = issue.lower()
+    if "언어: 영어" in issue or "language: english" in lo or "언어:영어" in issue:
+        return "english"
+    if "믹스" in issue or "mixed" in lo or "혼합" in issue:
+        return "mixed"
+    return "korean"
+
+
 def compose_plan_rule(issue: str) -> dict:
     """룰 기반 기획 (LLM 폴백용)."""
     issue = (issue or "").strip()
     preset = _pick_preset(issue)
     mood = preset["mood"]
     keyword = _extract_keyword(issue)
+    lang = _detect_language(issue)
 
-    # 가사: 무드 템플릿에 키워드 삽입 후 조사 자동 매칭
+    if lang == "english":
+        # 영어 템플릿
+        template = ENGLISH_LYRIC_TEMPLATES.get(mood, ENGLISH_LYRIC_TEMPLATES["modern"])
+        # 영어 제목으로 — 키워드 그대로 영어로 못 바꾸니 일반 영어 제목 패턴 사용
+        title_patterns = ENGLISH_TITLE_PATTERNS.get(mood, ENGLISH_TITLE_PATTERNS["modern"])
+        # 키워드가 한국어면 mood 기반 영어 단어로 대체
+        en_keyword = {
+            "warm": "memory", "bright": "sunlight", "emotional": "echo",
+            "energetic": "fire", "cozy": "warmth", "modern": "city",
+            "cold": "winter", "fresh": "spring", "calm": "stillness",
+            "dreamy": "dream", "playful": "joy",
+        }.get(mood, "story")
+        lyrics = template.replace("{topic}", en_keyword)
+        title = title_patterns[0].replace("{kw}", en_keyword.title())
+        return {
+            "title": title,
+            "lyrics": lyrics,
+            "style": preset["style"],
+            "mood": mood,
+            "keyword": en_keyword,
+            "source": "rule",
+            "language": "english",
+        }
+
+    # 기본: 한국어
     template = LYRIC_TEMPLATES.get(mood, LYRIC_TEMPLATES["modern"])
     lyrics = template.replace("{topic}", keyword)
     lyrics = _apply_josa(lyrics)
-
-    # 제목: 무드별 패턴 첫 번째 사용
     title_patterns = TITLE_PATTERNS.get(mood, TITLE_PATTERNS["modern"])
     title = title_patterns[0].replace("{kw}", keyword)
 
@@ -415,23 +468,35 @@ def compose_plan_rule(issue: str) -> dict:
         "mood": mood,
         "keyword": keyword,
         "source": "rule",
+        "language": "korean",
     }
 
 
 # ── LLM 작곡가 ────────────────────────────────────────────────────
-SYSTEM_PROMPT = """너는 한국 K-POP/인디 음악 분야의 작곡가야.
-사용자가 주는 '최근 이슈' 한 줄을 받아 그 이슈의 무드를 살린 한국어 곡을 기획한다.
+SYSTEM_PROMPT = """너는 음악 작곡가야.
+사용자가 주는 '이슈' 한 줄을 받아 그 무드를 살린 곡을 기획한다.
 
-규칙:
-- 가사는 자연스러운 한국어. 조사(을/를, 이/가, 은/는, 와/과)를 정확히 사용.
-- 구조는 [Verse 1] / [Chorus] / [Verse 2] / [Chorus] 4단계.
+언어 처리:
+- 이슈에 "언어: 영어" 표시가 있으면 → 제목 + 가사 모두 영어
+- 이슈에 "언어: 한국어 + 영어 믹스" 표시가 있으면 → 한국어 베이스에 영어 후크
+- 그 외 (한국어 표시 또는 표시 없음) → 한국어
+- 한국어 가사는 조사(을/를, 이/가, 은/는, 와/과) 정확히
+
+구조 규칙:
+- 구조는 [Verse 1] / [Chorus] / [Verse 2] / [Chorus] 4단계
 - 각 섹션은 4행 정도. 너무 길게 쓰지 마.
-- 제목은 한국어 8자 이내, 너무 직접적이지 않게.
-- 스타일은 영문 키워드 한 줄 (장르 + BPM + 보컬 톤). 예: "city pop, female vocal, 92 BPM, autumn vibes".
+- 제목은 8~12자 이내, 너무 직접적이지 않게. 가사 언어와 같은 언어로.
+- 스타일은 항상 영문 키워드 한 줄 (장르 + BPM + 보컬 톤). 예: "city pop, female vocal, 92 BPM, autumn vibes"
+
+분위기:
+- 이슈에 "분위기: ..." 표시가 있으면 그 분위기를 반드시 반영
+- "잔잔한 위로" → 차분한 어쿠스틱
+- "에너지 넘치는 응원" → 빠르고 밝은 BPM
+- "감성적인 추억" → 미디엄 템포, 회상조
 
 출력은 반드시 아래 JSON 한 덩어리만. 설명 텍스트, 코드펜스(```) 모두 금지.
 {
-  "title": "곡 제목",
+  "title": "곡 제목 (지정된 언어로)",
   "style": "영문 스타일 키워드",
   "lyrics": "[Verse 1]\\n...\\n\\n[Chorus]\\n...\\n\\n[Verse 2]\\n...\\n\\n[Chorus]\\n...",
   "mood": "warm|bright|cold|fresh|emotional|energetic|cozy|calm|dreamy|playful|modern 중 하나",
