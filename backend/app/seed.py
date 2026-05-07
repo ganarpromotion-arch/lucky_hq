@@ -46,10 +46,11 @@ AGENTS = [
     {"slug": "telegram", "name": "텔레그램", "role": "telegram", "avatar": "✈️",
      "voice": "owner 텔레그램 채널로 곡과 영상을 보고하고 ✓/✗ 답장을 받는다.",
      "is_active": True},
+    {"slug": "commander", "name": "지휘관", "role": "commander", "avatar": "🎯",
+     "voice": "owner의 자연어 명령에 답하고 본부 상태를 보고한다.",
+     "is_active": True},
 
     # ── 비활성 (시드만, UI 숨김) ─────────────────────
-    {"slug": "commander", "name": "지휘관", "role": "commander", "avatar": "🎯",
-     "voice": "자연어 명령의 단일 진입점.", "is_active": False},
     {"slug": "control", "name": "관제", "role": "control", "avatar": "📡",
      "voice": "전체 직원 상태/큐/락을 감시한다.", "is_active": False},
     {"slug": "api_manager", "name": "API 관리", "role": "api_manager", "avatar": "🗝️",
