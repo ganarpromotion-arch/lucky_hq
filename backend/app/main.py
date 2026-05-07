@@ -3,6 +3,15 @@ Lucky HQ FastAPI 진입점
 """
 import logging
 import os
+import time
+
+# 타임존: Asia/Seoul — Railway가 TZ 미설정 시에도 본부 시간을 KST로 통일
+os.environ.setdefault("TZ", "Asia/Seoul")
+try:
+    time.tzset()
+except AttributeError:
+    pass  # Windows는 tzset 없음 (Railway는 Linux이므로 영향 없음)
+
 from pathlib import Path
 from contextlib import asynccontextmanager
 

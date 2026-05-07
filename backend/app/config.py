@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # 앱
     app_name: str = "Lucky HQ"
     app_env: str = "development"
+    timezone: str = "Asia/Seoul"
+    timezone: str = "Asia/Seoul"
+    timezone: str = "Asia/Seoul"
 
     # DB
     database_url: str = "sqlite:///./lucky_hq.db"
