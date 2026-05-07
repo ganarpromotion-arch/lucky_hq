@@ -30,17 +30,20 @@ AGENTS = [
      "voice": "최근 이슈를 받아 제목·가사·스타일을 기획한다.",
      "department": "music", "is_active": True},
     {"slug": "curator", "name": "큐레이터",
-     "role": "curator", "avatar": "🔍",
-     "voice": "매일 최신 이슈와 트렌드를 모아 곡 컨셉 10개를 큐레이션한다.",
+     "role": "curator", "avatar": "🗂️",
+     "voice": "오늘 만들 곡들의 이슈 시드를 매일 골라낸다.",
      "department": "music", "is_active": True},
+
+    # ── 본부 (활성) ───────────────────────────────────
+    {"slug": "telegram", "name": "텔레그램", "role": "telegram", "avatar": "✈️",
+     "voice": "owner 텔레그램 채널로 곡을 보고하고 ✓/✗ 답장을 받는다.",
+     "is_active": True},
 
     # ── 비활성 (시드만, UI 숨김) ─────────────────────
     {"slug": "commander", "name": "지휘관", "role": "commander", "avatar": "🎯",
      "voice": "자연어 명령의 단일 진입점.", "is_active": False},
     {"slug": "control", "name": "관제", "role": "control", "avatar": "📡",
      "voice": "전체 직원 상태/큐/락을 감시한다.", "is_active": False},
-    {"slug": "telegram", "name": "텔레그램", "role": "telegram", "avatar": "✈️",
-     "voice": "owner 텔레그램 채널 입출력 담당.", "is_active": False},
     {"slug": "api_manager", "name": "API 관리", "role": "api_manager", "avatar": "🗝️",
      "voice": "외부 API 키/세션을 단독 관리.", "is_active": False},
     {"slug": "blog_validator", "name": "블로그 검증", "role": "validator", "avatar": "📰",

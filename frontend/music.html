@@ -33,6 +33,20 @@
     </div>
   </section>
 
+  <!-- 자동 배치 (테스트) -->
+  <section class="card">
+    <div class="card-head" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+      <div>
+        <h2>자동 배치 — 6곡 만들고 텔레그램 보고</h2>
+        <p class="desc">큐레이터가 이슈 6개 → 작곡가가 가사 → 음악 프로듀서가 Mureka 호출 → 텔레그램으로 audio 6개 전송. 약 5~10분.</p>
+      </div>
+      <button id="btn-test-batch" class="btn btn-primary">▶ 지금 6곡 만들기</button>
+    </div>
+    <div class="card-body">
+      <div id="batch-status" class="empty">아직 실행하지 않았습니다.</div>
+    </div>
+  </section>
+
   <!-- API 키 (요약) -->
   <section class="card compact">
     <div class="card-head" style="display:flex; justify-content:space-between; align-items:center;">
@@ -45,10 +59,6 @@
     <div class="card-body">
       <div id="api-mini-list">
         <div class="empty">불러오는 중…</div>
-      </div>
-      <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
-        <button class="btn btn-sm" id="btn-billing">Mureka 잔량 확인</button>
-        <span class="hint" id="billing-hint">키 유효성 + 한도 진단 (계속 quota 에러일 때 눌러보세요)</span>
       </div>
     </div>
   </section>
@@ -106,25 +116,7 @@
     </div>
   </section>
 
-  <!-- 오늘의 배치 (자동 생성된 10곡 검토창) -->
-  <section class="card" id="batch-card" style="display:none;">
-    <div class="card-head" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-      <div>
-        <h2>📅 오늘의 배치</h2>
-        <p class="desc" id="batch-meta">불러오는 중…</p>
-      </div>
-      <div style="display:flex; gap:6px; align-items:center;">
-        <span id="batch-deadline" class="badge tint" style="display:none;"></span>
-        <button class="btn btn-sm" id="btn-batch-now">지금 1회 실행</button>
-      </div>
-    </div>
-    <div class="card-body">
-      <div id="batch-themes" style="margin-bottom:14px;"></div>
-      <div class="jobs" id="batch-jobs"></div>
-    </div>
-  </section>
-
-  <!-- 작업 목록 (수동 + 누적) -->
+  <!-- 작업 목록 -->
   <section class="card">
     <div class="card-head">
       <h2>작업 목록</h2>

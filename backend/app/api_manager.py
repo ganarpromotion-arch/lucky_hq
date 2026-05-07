@@ -67,6 +67,8 @@ async def call_api(
             result = await _call_anthropic(db, operation, payload, settings, timeout)
         elif provider == "openai":
             result = await _call_openai(db, operation, payload, settings, timeout)
+        elif provider == "telegram":
+            result = await _call_telegram(db, operation, payload, settings, timeout)
         else:
             raise ProviderError(f"unknown provider: {provider}")
 
@@ -117,16 +119,13 @@ async def _call_mureka(
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         if operation == "generate":
-            # POST /v1/song/generate
+            # POST /v1/song/generate  (memory 기준)
             r = await client.post(f"{base}/v1/song/generate", headers=headers, json=payload)
         elif operation == "query":
             task_id = payload.get("id") or payload.get("task_id")
             if not task_id:
                 return {"ok": False, "error": "id 누락", "status_code": 0, "data": None}
             r = await client.get(f"{base}/v1/song/query/{task_id}", headers=headers)
-        elif operation == "billing":
-            # GET /v1/account/billing — 키 유효성 + 잔량 확인용
-            r = await client.get(f"{base}/v1/account/billing", headers=headers)
         else:
             return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
 
@@ -234,4 +233,63 @@ async def _call_openai(
         "status_code": r.status_code,
         "data": data,
         "error": "" if r.is_success else f"HTTP {r.status_code}: {str(data)[:200]}",
+    }
+
+
+async def _call_telegram(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """Telegram Bot API.
+
+    operations:
+      - "sendMessage"    : 텍스트 메시지 전송
+      - "sendAudio"      : 오디오 파일 전송 (Mureka audio_url을 그대로 넘기면 텔레그램이 가져감)
+      - "sendDocument"   : 일반 파일 전송
+      - "setWebhook"     : webhook URL 등록
+      - "deleteWebhook"  : webhook 삭제
+      - "getMe"          : 봇 정보 (검증용)
+      - "getUpdates"     : 폴링 (웹훅 없을 때 디버깅용)
+
+    chat_id가 payload에 없으면 settings.telegram_owner_chat_id로 자동 채움.
+    """
+    token = _resolve_secret(db, "telegram_bot_token", settings.telegram_bot_token)
+    if not token:
+        return {"ok": False, "error": "Telegram 봇 토큰 미설정 (TELEGRAM_BOT_TOKEN)", "status_code": 0, "data": None}
+
+    base = settings.telegram_api_base.rstrip("/")
+    url = f"{base}/bot{token}/{operation}"
+
+    # chat_id 자동 채우기 (sendXxx 계열만)
+    if operation.startswith("send") and payload and not payload.get("chat_id"):
+        owner = _resolve_secret(db, "telegram_owner_chat_id", settings.telegram_owner_chat_id)
+        if owner:
+            payload = {**payload, "chat_id": owner}
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        # GET (getMe, getUpdates) vs POST
+        if operation in ("getMe", "getUpdates", "deleteWebhook"):
+            r = await client.get(url, params=payload or None)
+        else:
+            r = await client.post(url, json=payload or {})
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:500]}
+
+    # 텔레그램은 ok 필드를 응답에 명시
+    tg_ok = bool(isinstance(data, dict) and data.get("ok"))
+    success = r.is_success and tg_ok
+
+    if success:
+        error_msg = ""
+    else:
+        api_msg = (data.get("description") if isinstance(data, dict) else "") or ""
+        error_msg = f"Telegram HTTP {r.status_code}{' — ' + api_msg if api_msg else ''}"
+
+    return {
+        "ok": success,
+        "status_code": r.status_code,
+        "data": data,
+        "error": error_msg,
     }

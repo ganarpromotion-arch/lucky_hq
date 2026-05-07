@@ -103,37 +103,109 @@ async function loadSettings() {
   } catch (e) { /* 무시 */ }
 }
 
-async function onCheckBilling() {
-  const hint = $('#billing-hint');
-  const btn = $('#btn-billing');
-  btn.disabled = true;
-  hint.textContent = 'Mureka에 잔량 조회 중…'; hint.className = 'hint';
-  try {
-    const res = await fetchJSON('/api/music/mureka-billing');
-    if (!res.ok) {
-      hint.textContent = `✗ ${res.status_code || '?'} · ${res.error || '실패'}`;
-      hint.className = 'hint fail';
-      return;
+// ─────────────────────────────────────────────────
+// 자동 배치 (테스트 버튼)
+// ─────────────────────────────────────────────────
+let activeBatchId = null;
+let batchPolling = null;
+
+function renderBatchStatus(b) {
+  if (!b) {
+    $('#batch-status').className = 'empty';
+    $('#batch-status').textContent = '아직 실행하지 않았습니다.';
+    return;
+  }
+  const labelMap = {
+    pending: '대기 중',
+    running: '제작 중',
+    reporting: '텔레그램 보고 중',
+    done: '완료',
+    failed: '실패',
+  };
+  const statusLabel = labelMap[b.status] || b.status;
+  const issuesHtml = (b.issues || []).map((iss, i) => {
+    const job = (b.jobs || []).find(j => j.issue === iss);
+    let stat = '⏳';
+    if (job) {
+      stat = ({ pending: '⏳', running: '🎵', done: '✅', failed: '❌' })[job.status] || '⏳';
     }
-    const d = res.data || {};
-    const parts = [];
-    if (d.balance !== undefined) parts.push(`잔액: ${d.balance}`);
-    if (d.credits !== undefined) parts.push(`크레딧: ${d.credits}`);
-    if (d.plan) parts.push(`플랜: ${d.plan}`);
-    if (d.concurrency !== undefined) parts.push(`동시: ${d.concurrency}`);
-    const summary = parts.length ? parts.join(' · ') : JSON.stringify(d).slice(0, 200);
-    hint.textContent = `✓ 키 유효 — ${summary}`;
-    hint.className = 'hint ok';
+    return `<div style="padding:6px 10px; font-size:13px; display:flex; gap:10px;">
+      <span>${stat}</span>
+      <span style="flex:1;">${i + 1}. ${iss}</span>
+      ${job && job.title ? `<span style="color:var(--text-soft);">${job.title}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  $('#batch-status').className = '';
+  $('#batch-status').innerHTML = `
+    <div style="display:flex; gap:14px; align-items:center; margin-bottom:14px;">
+      <span class="badge ${b.status === 'done' ? 'ok' : (b.status === 'failed' ? 'fail' : 'run')}">
+        <span class="dot"></span>${statusLabel}
+      </span>
+      <span class="hint">배치 #${b.id} · 성공 ${b.completed_count}/${b.target_count} · 실패 ${b.failed_count}</span>
+    </div>
+    <div style="background: var(--surface-soft); border-radius: var(--r-md); padding: 8px;">
+      ${issuesHtml || '<div class="empty">이슈 정보 없음</div>'}
+    </div>
+    ${b.error ? `<div class="job-err" style="margin-top:10px; padding:10px; background:var(--danger-soft); color:var(--danger); border-radius:var(--r-sm); font-size:12px;">${b.error}</div>` : ''}
+  `;
+}
+
+async function pollBatch() {
+  if (!activeBatchId) return;
+  try {
+    const b = await fetchJSON(`/api/music/batches/${activeBatchId}`);
+    renderBatchStatus(b);
+    if (b.status === 'done' || b.status === 'failed') {
+      clearInterval(batchPolling);
+      batchPolling = null;
+      // 완료되면 잡 목록 새로고침
+      refreshJobs();
+    }
+  } catch (e) { /* 무시 */ }
+}
+
+async function loadLatestBatch() {
+  try {
+    const list = await fetchJSON('/api/music/batches?limit=1');
+    if (list.length) {
+      activeBatchId = list[0].id;
+      const b = await fetchJSON(`/api/music/batches/${activeBatchId}`);
+      renderBatchStatus(b);
+      if (b.status === 'pending' || b.status === 'running' || b.status === 'reporting') {
+        if (!batchPolling) batchPolling = setInterval(pollBatch, 4000);
+      }
+    }
+  } catch (e) { /* 무시 */ }
+}
+
+async function onTestBatch() {
+  if (!confirm('지금 6곡을 만들고 텔레그램으로 보고할까요?\n\n약 5~10분 소요됩니다. Mureka 비용이 발생합니다.')) return;
+  const btn = $('#btn-test-batch');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '시작 중…';
+  try {
+    const b = await fetchJSON('/api/music/batches', {
+      method: 'POST',
+      body: JSON.stringify({ target_count: 6, trigger: 'test_button' }),
+    });
+    activeBatchId = b.id;
+    renderBatchStatus(b);
+    if (batchPolling) clearInterval(batchPolling);
+    batchPolling = setInterval(pollBatch, 4000);
+    showToast('배치 시작됨. 진행 상황은 위에서 확인됩니다.');
   } catch (e) {
-    hint.textContent = '✗ ' + e.message;
-    hint.className = 'hint fail';
+    showToast('실패: ' + e.message);
   } finally {
     btn.disabled = false;
+    btn.textContent = orig;
   }
 }
 
+
 // ─────────────────────────────────────────────────
-// 작곡가 기획안
+// 작곡가 기획안 (단발 — 기존 기능 유지)
 // ─────────────────────────────────────────────────
 async function onComposePlan() {
   const issue = $('#f-issue').value.trim();
@@ -190,24 +262,8 @@ function renderJobs(jobs) {
   wrap.innerHTML = jobs.map(j => {
     const title = (j.input && j.input.title) || `곡 #${j.id}`;
     const style = (j.input && j.input.style) || '';
-    const variants = Array.isArray(j.audio_urls) ? j.audio_urls : [];
-    const players = variants.length
-      ? variants.map((v, i) => `
-          <div class="player" style="margin-top:8px;">
-            <div style="font-size:12px; color:#666; margin-bottom:4px;">버전 ${i + 1}${v.duration_ms ? ` · ${Math.round(v.duration_ms / 1000)}초` : ''}</div>
-            <audio controls preload="none" src="${v.url}"></audio>
-            ${v.url ? `<a class="btn btn-sm" href="${v.url}" download style="margin-left:6px;">⬇ mp3</a>` : ''}
-            ${v.flac_url ? `<a class="btn btn-sm" href="${v.flac_url}" download style="margin-left:4px;">⬇ flac</a>` : ''}
-          </div>`).join('')
-      : (j.audio_url
-          ? `<div class="player"><audio controls preload="none" src="${j.audio_url}"></audio></div>`
-          : '');
-    const showRefresh = j.status === 'done' && !variants.length && !j.audio_url;
-    const refreshBtn = (j.status === 'done' || j.status === 'failed') && j.external_id
-      ? `<button class="btn btn-sm js-refresh" data-id="${j.id}" style="margin-top:6px;">🔄 Mureka에서 다시 가져오기</button>`
-      : '';
-    const stuckHint = showRefresh
-      ? `<div class="hint" style="margin-top:6px;">완료됐는데 오디오가 안 보이면 위 버튼을 눌러보세요</div>`
+    const audio = j.audio_url
+      ? `<div class="player"><audio controls preload="none" src="${j.audio_url}"></audio></div>`
       : '';
     const err = j.status === 'failed'
       ? `<div class="err">에러: ${j.error || '알 수 없음'}</div>`
@@ -220,31 +276,11 @@ function renderJobs(jobs) {
           <div class="sub">${style ? style + ' · ' : ''}${fmtTime(j.created_at)}</div>
         </div>
         <div class="id">#${j.id}</div>
-        ${players}
-        ${refreshBtn}
-        ${stuckHint}
+        ${audio}
         ${err}
       </div>
     `;
   }).join('');
-
-  wrap.querySelectorAll('.js-refresh').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      btn.disabled = true;
-      const orig = btn.textContent;
-      btn.textContent = '가져오는 중…';
-      try {
-        await fetchJSON(`/api/music/jobs/${id}/refresh`, { method: 'POST' });
-        await refreshJobs();
-      } catch (e) {
-        showToast('✗ ' + e.message);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = orig;
-      }
-    });
-  });
 }
 
 let polling = null;
@@ -295,176 +331,16 @@ async function onGenerate() {
   }
 }
 
-// ─────────────────────────────────────────────────
-// 오늘의 배치 (큐레이터 → 작사가 → Mureka 10곡)
-// ─────────────────────────────────────────────────
-function fmtKstFromIso(iso) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('ko-KR', {
-      timeZone: 'Asia/Seoul',
-      hour12: false,
-      month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch (_) { return iso; }
-}
-
-function deadlineCountdown(iso) {
-  if (!iso) return '';
-  const ms = new Date(iso).getTime() - Date.now();
-  if (Number.isNaN(ms)) return '';
-  if (ms <= 0) return '검토 마감 지남';
-  const min = Math.floor(ms / 60000);
-  const sec = Math.floor((ms % 60000) / 1000);
-  if (min <= 0) return `검토 마감까지 ${sec}초`;
-  return `검토 마감까지 ${min}분 ${sec}초`;
-}
-
-function renderBatchJob(j) {
-  const title = (j.input && j.input.title) || `곡 #${j.id}`;
-  const style = (j.input && j.input.style) || '';
-  const issue = (j.input && j.input.issue) || '';
-  const concept = (j.input && j.input.concept) || '';
-  const variants = Array.isArray(j.audio_urls) ? j.audio_urls : [];
-  const isRemoved = !!j.removed_at;
-  const players = variants.length
-    ? variants.map((v, i) => `
-        <div class="player" style="margin-top:6px;">
-          <div style="font-size:12px; color:#666; margin-bottom:3px;">버전 ${i + 1}${v.duration_ms ? ` · ${Math.round(v.duration_ms / 1000)}초` : ''}</div>
-          <audio controls preload="none" src="${v.url}"></audio>
-        </div>`).join('')
-    : (j.audio_url
-        ? `<div class="player"><audio controls preload="none" src="${j.audio_url}"></audio></div>`
-        : '');
-  const action = isRemoved
-    ? `<button class="btn btn-sm js-restore" data-id="${j.id}">↩ 복원 (${j.removed_by || '?'})</button>`
-    : (j.status === 'done'
-        ? `<button class="btn btn-sm btn-danger js-exclude" data-id="${j.id}">❌ 제외</button>`
-        : '');
-  const errLine = j.status === 'failed'
-    ? `<div class="err">에러: ${j.error || '알 수 없음'}</div>`
-    : '';
-  return `
-    <div class="job ${isRemoved ? 'is-removed' : ''}" data-id="${j.id}" style="${isRemoved ? 'opacity:0.5;' : ''}">
-      ${statusBadge(j.status)}
-      <div class="meta">
-        <div class="title">${title}${isRemoved ? ' <span class="badge fail">제외됨</span>' : ''}</div>
-        <div class="sub">${style}${issue ? ' · ' + issue : ''}</div>
-        ${concept && concept !== style ? `<div class="sub" style="font-size:11px; color:#888;">컨셉: ${concept}</div>` : ''}
-      </div>
-      <div class="id">#${j.id}</div>
-      ${players}
-      <div style="margin-top:6px;">${action}</div>
-      ${errLine}
-    </div>
-  `;
-}
-
-let batchData = null;
-
-async function refreshBatch() {
-  try {
-    const b = await fetchJSON('/api/music/batches/today/current');
-    batchData = b;
-    const card = $('#batch-card');
-    if (!b) {
-      card.style.display = 'none';
-      return;
-    }
-    card.style.display = '';
-    const counts = b.counts || {};
-    const meta = [
-      `${b.run_date}`,
-      `상태: ${b.status}`,
-      `완료 ${counts.done || 0}/${counts.total || 0}`,
-      counts.failed ? `실패 ${counts.failed}` : '',
-      counts.removed ? `제외 ${counts.removed}` : '',
-    ].filter(Boolean).join(' · ');
-    $('#batch-meta').textContent = meta;
-    const dl = $('#batch-deadline');
-    if (b.deadline_at && b.status === 'awaiting_review') {
-      dl.style.display = '';
-      dl.textContent = deadlineCountdown(b.deadline_at);
-    } else {
-      dl.style.display = 'none';
-    }
-    // 큐레이션 테마 요약
-    const themes = (b.curated_themes && b.curated_themes.themes) || [];
-    if (themes.length) {
-      $('#batch-themes').innerHTML = `
-        <details>
-          <summary style="cursor:pointer; color:#666; font-size:13px;">큐레이션 테마 ${themes.length}개 보기 (${(b.curated_themes && b.curated_themes.source) || '-'})</summary>
-          <ol style="margin:8px 0 0 20px; font-size:13px; color:#555;">
-            ${themes.map(t => `<li>${t.issue}${t.concept ? ` <span style="color:#999;">— ${t.concept}</span>` : ''}</li>`).join('')}
-          </ol>
-        </details>`;
-    } else {
-      $('#batch-themes').innerHTML = '';
-    }
-    // 곡 목록
-    const jobsWrap = $('#batch-jobs');
-    if (!b.jobs || !b.jobs.length) {
-      jobsWrap.innerHTML = '<div class="empty">아직 곡이 없습니다.</div>';
-    } else {
-      jobsWrap.innerHTML = b.jobs.map(renderBatchJob).join('');
-      jobsWrap.querySelectorAll('.js-exclude').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          if (!confirm(`#${btn.dataset.id} 를 빼시겠어요? (한 명이 ❌하면 즉시 제외)`)) return;
-          btn.disabled = true;
-          try {
-            await fetchJSON(`/api/music/jobs/${btn.dataset.id}/exclude`, {
-              method: 'POST',
-              body: JSON.stringify({ by: 'owner' }),
-            });
-            await refreshBatch();
-          } catch (e) { showToast('✗ ' + e.message); btn.disabled = false; }
-        });
-      });
-      jobsWrap.querySelectorAll('.js-restore').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          try {
-            await fetchJSON(`/api/music/jobs/${btn.dataset.id}/restore`, { method: 'POST' });
-            await refreshBatch();
-          } catch (e) { showToast('✗ ' + e.message); btn.disabled = false; }
-        });
-      });
-    }
-  } catch (_) { /* 무시 */ }
-}
-
-async function onRunBatchNow() {
-  if (!confirm('지금 일일 배치를 1회 실행할까요? Mureka 호출이 발생합니다.')) return;
-  const btn = $('#btn-batch-now');
-  btn.disabled = true;
-  const orig = btn.textContent;
-  btn.textContent = '실행 중… (10~20분)';
-  try {
-    const r = await fetchJSON('/api/music/batches/run-now', { method: 'POST' });
-    showToast(`배치 #${r.batch_id} · 완료 ${r.done}/${r.created} · 실패 ${r.failed}${r.skipped_reason ? ' · skip: ' + r.skipped_reason : ''}`);
-  } catch (e) {
-    showToast('✗ ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = orig;
-    await refreshBatch();
-  }
-}
-
 (function main() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
-  $('#btn-billing').addEventListener('click', onCheckBilling);
-  const bn = $('#btn-batch-now');
-  if (bn) bn.addEventListener('click', onRunBatchNow);
+  $('#btn-test-batch').addEventListener('click', onTestBatch);
 
   loadAgents();
   loadSettings();
+  loadLatestBatch();
   refreshJobs();
-  refreshBatch();
   setInterval(loadAgents, 8000);
   setInterval(loadSettings, 12000);
   setInterval(refreshJobs, 5000);
-  setInterval(refreshBatch, 5000);  // 카운트다운/진행상황 갱신
 })();
