@@ -83,6 +83,7 @@ class Batch(Base):
     completed_count = Column(Integer, default=0)
     failed_count = Column(Integer, default=0)
     issues = Column(JSON, default=list)                    # 큐레이터가 뽑은 이슈 N개
+    make_video = Column(Boolean, default=False)            # 곡마다 mp4 만들지 여부
     error = Column(Text, default="")
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
@@ -126,4 +127,24 @@ class Setting(Base):
     key = Column(String(64), unique=True, nullable=False, index=True)
     value = Column(Text, default="")
     is_secret = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Video(Base):
+    """영상 작업 단위 — 곡 1개 → mp4 1편.
+    원본 곡 Job 참조 + 결과 파일 경로 + 텔레그램 전송 상태."""
+    __tablename__ = "videos"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    batch_id = Column(Integer, ForeignKey("batches.id"), nullable=True, index=True)
+    status = Column(String(32), default="pending")    # pending | rendering | done | failed
+    image_path = Column(String(512), default="")      # 정지 이미지 결과 경로
+    video_path = Column(String(512), default="")      # mp4 결과 경로
+    duration_sec = Column(Integer, default=0)
+    file_size = Column(Integer, default=0)
+    telegram_sent = Column(Boolean, default=False)
+    telegram_message_id = Column(Integer, nullable=True)
+    error = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

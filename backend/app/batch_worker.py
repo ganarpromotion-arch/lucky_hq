@@ -7,23 +7,28 @@
      a. 작곡가가 기획안 생성 (LLM 또는 룰)
      b. 음악 프로듀서가 Mureka에 의뢰
      c. Mureka 폴링 (작업 완료까지)
-     d. 텔레그램으로 곡 audio 전송
+     d. (옵션) 영상 편집자가 mp4 인코딩
+     e. 텔레그램으로 곡 audio + mp4 전송
   3. 배치 완료 보고
 
 순차 처리 (Mureka rate limit 회피).
-백그라운드 태스크로 실행 — fastapi BackgroundTasks 또는 asyncio.create_task.
+배치 옵션:
+  - make_video=True: 곡마다 mp4 생성 후 전송
+  - make_video=False: audio만 전송 (기본, 빠름)
 """
 from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .models import Batch, Job, AuditLog, Agent
+from .models import Batch, Job, AuditLog, Agent, Video
 from .api_manager import call_api
 from .songwriter import compose_plan as songwriter_compose
 from . import telegram_agent
+from . import video_maker
 
 log = logging.getLogger("lucky_hq.batch")
 
@@ -94,14 +99,17 @@ async def run_batch(batch_id: int) -> None:
             await telegram_agent.report_batch(db, batch)
             db.commit()
 
-            # 성공한 곡들 audio 전송
+            # 성공한 곡들: 영상 만들지 audio만 보낼지 결정
             done_jobs = db.query(Job).filter_by(batch_id=batch_id, status="done").order_by(Job.id).all()
             for job in done_jobs:
                 try:
-                    await telegram_agent.send_audio_for_job(db, job)
+                    if batch.make_video:
+                        await _make_and_send_video(db, batch, job)
+                    else:
+                        await telegram_agent.send_audio_for_job(db, job)
                     db.commit()
                 except Exception as e:
-                    log.exception(f"telegram audio send failed for job {job.id}")
+                    log.exception(f"telegram send failed for job {job.id}")
                     _audit(db, "telegram.send_error", target=f"job:{job.id}",
                            detail={"error": str(e)[:200]}, actor="telegram")
                     db.commit()
@@ -263,3 +271,93 @@ async def _process_one(db: Session, batch: Batch, issue: str, idx: int) -> None:
     job.error = f"폴링 타임아웃 ({POLL_TIMEOUT_SEC}s)"
     _audit(db, "music.generate_timeout", target=f"job:{job.id}")
     db.commit()
+
+async def _make_and_send_video(db: Session, batch: Batch, job: Job) -> None:
+    """곡 1개에 대한 mp4 만들고 텔레그램으로 전송.
+
+    실패 시 audio만이라도 보내도록 폴백.
+    """
+    audio_url = (job.output or {}).get("audio_url")
+    title = (job.input or {}).get("title", f"곡 #{job.id}")
+    issue = (job.input or {}).get("issue", "")
+    style = (job.input or {}).get("style", "")
+    mood = (job.input or {}).get("mood", "modern")
+
+    if not audio_url:
+        # 오디오 URL 없으면 영상 못 만듦 — audio 폴백
+        await telegram_agent.send_audio_for_job(db, job)
+        return
+
+    # Video 레코드 생성
+    video = Video(
+        job_id=job.id,
+        batch_id=batch.id,
+        status="rendering",
+    )
+    db.add(video)
+    db.flush()
+
+    _set_agent(db, "video_editor", f"#{job.id} 영상 인코딩")
+    _audit(db, "video.render_started", target=f"video:{video.id}",
+           detail={"job_id": job.id, "title": title}, actor="video_editor")
+    db.commit()
+
+    # 영상 만들기
+    result = await video_maker.make_video_for_job(
+        job_id=job.id, audio_url=audio_url,
+        title=title, mood=mood, subtitle=issue,
+    )
+
+    video = db.get(Video, video.id)
+    if not result.get("ok"):
+        video.status = "failed"
+        video.error = result.get("error", "")[:500]
+        _audit(db, "video.render_failed", target=f"video:{video.id}",
+               detail={"error": video.error[:120]}, actor="video_editor")
+        db.commit()
+        # 영상 실패 → audio라도 보내기
+        await telegram_agent.send_audio_for_job(db, job)
+        return
+
+    video.status = "done"
+    video.image_path = result.get("image_path", "")
+    video.video_path = result.get("video_path", "")
+    video.duration_sec = result.get("duration_sec", 0)
+    video.file_size = result.get("file_size", 0)
+    _audit(db, "video.render_done", target=f"video:{video.id}",
+           detail={"duration": video.duration_sec, "size_mb": video.file_size // 1024 // 1024},
+           actor="video_editor")
+    db.commit()
+
+    # 텔레그램으로 mp4 전송
+    _set_agent(db, "telegram", f"#{job.id} 영상 전송 중")
+    db.commit()
+
+    caption = (
+        f"<b>#{job.id} · {title}</b>\n"
+        f"{('<i>' + issue + '</i>' + chr(10)) if issue else ''}"
+        f"🎼 {style}\n"
+        f"⏱ {video.duration_sec}s · 💾 {video.file_size // 1024 // 1024}MB\n\n"
+        f"채택은 이 메시지에 <b>✓</b> · 거절은 <b>✗</b> 로 답장"
+    )
+    send_result = await telegram_agent.send_video_file(
+        db, video_path=video.video_path, caption=caption, job_id=job.id,
+    )
+
+    if send_result.get("ok"):
+        msg_id = ((send_result.get("data") or {}).get("result") or {}).get("message_id")
+        if msg_id:
+            video.telegram_sent = True
+            video.telegram_message_id = int(msg_id)
+            job.telegram_message_id = int(msg_id)
+            job.review_status = "pending_review"
+            _audit(db, "telegram.video_sent", target=f"video:{video.id}",
+                   detail={"message_id": msg_id}, actor="telegram")
+        db.commit()
+    else:
+        _audit(db, "telegram.video_send_failed", target=f"video:{video.id}",
+               detail={"error": send_result.get("error", "")[:200]}, actor="telegram")
+        db.commit()
+        # 영상 못 보냈으면 audio 폴백
+        await telegram_agent.send_audio_for_job(db, job)
+        db.commit()

@@ -23,6 +23,7 @@ class CreateBatchRequest(BaseModel):
     target_count: int = Field(default=6, ge=1, le=10)
     trigger: str = Field(default="test_button")
     use_today_seed: bool = Field(default=False, description="True면 오늘 날짜 기반 결정적 픽")
+    make_video: bool = Field(default=False, description="True면 곡마다 mp4 만들어 전송")
 
 
 @router.post("")
@@ -41,11 +42,12 @@ async def create_batch(req: CreateBatchRequest, bg: BackgroundTasks,
 
     batch = Batch(
         department_slug="music",
-        kind=f"music_{req.target_count}",
+        kind=f"music_{req.target_count}{'_v' if req.make_video else ''}",
         trigger=req.trigger,
         status="pending",
         target_count=req.target_count,
         issues=issues,
+        make_video=req.make_video,
     )
     db.add(batch)
     db.flush()
@@ -53,7 +55,8 @@ async def create_batch(req: CreateBatchRequest, bg: BackgroundTasks,
         actor="owner" if req.trigger == "test_button" else "scheduler",
         action="batch.created",
         target=f"batch:{batch.id}",
-        detail={"trigger": req.trigger, "target_count": req.target_count, "issues": issues},
+        detail={"trigger": req.trigger, "target_count": req.target_count,
+                "make_video": req.make_video, "issues": issues},
     ))
     db.commit()
     db.refresh(batch)
@@ -90,6 +93,7 @@ def _serialize(batch: Batch, jobs=None) -> dict:
         "completed_count": batch.completed_count,
         "failed_count": batch.failed_count,
         "issues": batch.issues or [],
+        "make_video": bool(batch.make_video),
         "error": batch.error or "",
         "started_at": batch.started_at.isoformat() if batch.started_at else None,
         "finished_at": batch.finished_at.isoformat() if batch.finished_at else None,

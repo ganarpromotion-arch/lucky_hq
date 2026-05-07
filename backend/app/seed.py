@@ -15,6 +15,8 @@ from .models import Department, Agent
 DEPARTMENTS = [
     {"slug": "music", "name": "음악제작", "status": "piloting",
      "description": "Mureka API로 가사+스타일을 곡으로 만드는 부서."},
+    {"slug": "video", "name": "영상제작", "status": "piloting",
+     "description": "정지 이미지 + 곡 → 쇼츠용 mp4를 만드는 부서."},
 ]
 
 
@@ -34,9 +36,15 @@ AGENTS = [
      "voice": "오늘 만들 곡들의 이슈 시드를 매일 골라낸다.",
      "department": "music", "is_active": True},
 
+    # ── 영상부서 (활성) ───────────────────────────────
+    {"slug": "video_editor", "name": "영상 편집자",
+     "role": "video_editor", "avatar": "🎬",
+     "voice": "정지 이미지를 만들고 곡과 합쳐 쇼츠 mp4로 인코딩한다.",
+     "department": "video", "is_active": True},
+
     # ── 본부 (활성) ───────────────────────────────────
     {"slug": "telegram", "name": "텔레그램", "role": "telegram", "avatar": "✈️",
-     "voice": "owner 텔레그램 채널로 곡을 보고하고 ✓/✗ 답장을 받는다.",
+     "voice": "owner 텔레그램 채널로 곡과 영상을 보고하고 ✓/✗ 답장을 받는다.",
      "is_active": True},
 
     # ── 비활성 (시드만, UI 숨김) ─────────────────────

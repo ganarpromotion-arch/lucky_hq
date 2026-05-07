@@ -138,10 +138,11 @@ function renderBatchStatus(b) {
 
   $('#batch-status').className = '';
   $('#batch-status').innerHTML = `
-    <div style="display:flex; gap:14px; align-items:center; margin-bottom:14px;">
+    <div style="display:flex; gap:14px; align-items:center; margin-bottom:14px; flex-wrap: wrap;">
       <span class="badge ${b.status === 'done' ? 'ok' : (b.status === 'failed' ? 'fail' : 'run')}">
         <span class="dot"></span>${statusLabel}
       </span>
+      ${b.make_video ? '<span class="badge tint">🎬 영상 mp4</span>' : '<span class="badge">🎵 audio</span>'}
       <span class="hint">배치 #${b.id} · 성공 ${b.completed_count}/${b.target_count} · 실패 ${b.failed_count}</span>
     </div>
     <div style="background: var(--surface-soft); border-radius: var(--r-md); padding: 8px;">
@@ -179,27 +180,34 @@ async function loadLatestBatch() {
   } catch (e) { /* 무시 */ }
 }
 
-async function onTestBatch() {
-  if (!confirm('지금 6곡을 만들고 텔레그램으로 보고할까요?\n\n약 5~10분 소요됩니다. Mureka 비용이 발생합니다.')) return;
-  const btn = $('#btn-test-batch');
-  btn.disabled = true;
-  const orig = btn.textContent;
-  btn.textContent = '시작 중…';
+async function onTestBatch(targetCount, makeVideo) {
+  const videoLabel = makeVideo ? '영상 mp4' : 'audio';
+  const eta = makeVideo
+    ? (targetCount === 1 ? '약 3분' : '약 15분')
+    : (targetCount === 1 ? '약 1분' : '약 6분');
+  const cost = `약 ${targetCount * 100}원`;
+  if (!confirm(`${targetCount}곡 (${videoLabel})\n예상: ${eta}, ${cost}\n\n시작할까요?`)) return;
+
+  const buttons = document.querySelectorAll('[data-batch]');
+  buttons.forEach(b => b.disabled = true);
   try {
     const b = await fetchJSON('/api/music/batches', {
       method: 'POST',
-      body: JSON.stringify({ target_count: 6, trigger: 'test_button' }),
+      body: JSON.stringify({
+        target_count: targetCount,
+        trigger: 'test_button',
+        make_video: !!makeVideo,
+      }),
     });
     activeBatchId = b.id;
     renderBatchStatus(b);
     if (batchPolling) clearInterval(batchPolling);
     batchPolling = setInterval(pollBatch, 4000);
-    showToast('배치 시작됨. 진행 상황은 위에서 확인됩니다.');
+    showToast('배치 시작됨. 진행은 위에서 확인됩니다.');
   } catch (e) {
     showToast('실패: ' + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = orig;
+    buttons.forEach(b => b.disabled = false);
   }
 }
 
@@ -334,7 +342,15 @@ async function onGenerate() {
 (function main() {
   $('#btn-plan').addEventListener('click', onComposePlan);
   $('#btn-generate').addEventListener('click', onGenerate);
-  $('#btn-test-batch').addEventListener('click', onTestBatch);
+
+  // 4개 배치 버튼 일반화
+  document.querySelectorAll('[data-batch]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const count = parseInt(btn.dataset.batch, 10);
+      const video = btn.dataset.video === 'true';
+      onTestBatch(count, video);
+    });
+  });
 
   loadAgents();
   loadSettings();

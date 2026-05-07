@@ -35,15 +35,30 @@
 
   <!-- 자동 배치 (테스트) -->
   <section class="card">
-    <div class="card-head" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-      <div>
-        <h2>자동 배치 — 6곡 만들고 텔레그램 보고</h2>
-        <p class="desc">큐레이터가 이슈 6개 → 작곡가가 가사 → 음악 프로듀서가 Mureka 호출 → 텔레그램으로 audio 6개 전송. 약 5~10분.</p>
-      </div>
-      <button id="btn-test-batch" class="btn btn-primary">▶ 지금 6곡 만들기</button>
+    <div class="card-head">
+      <h2>자동 배치 — 곡 만들고 텔레그램 보고</h2>
+      <p class="desc">큐레이터가 이슈 → 작곡가가 가사 → Mureka가 곡 → (영상 옵션) → 텔레그램 전송. 한 번에 한 배치만 실행됩니다.</p>
     </div>
     <div class="card-body">
-      <div id="batch-status" class="empty">아직 실행하지 않았습니다.</div>
+      <div class="batch-buttons">
+        <button class="btn" data-batch="1" data-video="false">
+          <div class="btn-title">▶ 1곡 (audio만)</div>
+          <div class="btn-sub">~1분 · 약 100원</div>
+        </button>
+        <button class="btn" data-batch="6" data-video="false">
+          <div class="btn-title">▶ 6곡 (audio만)</div>
+          <div class="btn-sub">~6분 · 약 600원</div>
+        </button>
+        <button class="btn btn-primary" data-batch="1" data-video="true">
+          <div class="btn-title">🎬 1곡 → 영상 mp4</div>
+          <div class="btn-sub">~3분 · 약 100원</div>
+        </button>
+        <button class="btn btn-primary" data-batch="6" data-video="true">
+          <div class="btn-title">🎬 6곡 → 영상 mp4</div>
+          <div class="btn-sub">~15분 · 약 600원</div>
+        </button>
+      </div>
+      <div id="batch-status" class="empty" style="margin-top: 18px;">아직 실행하지 않았습니다.</div>
     </div>
   </section>
 

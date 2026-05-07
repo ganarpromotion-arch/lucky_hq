@@ -77,6 +77,95 @@ async def send_audio_for_job(db: Session, job: Job) -> dict:
     return result
 
 
+async def send_video_file(db: Session, video_path: str, caption: str,
+                          job_id: int | None = None) -> dict:
+    """로컬 mp4 파일을 multipart로 텔레그램에 업로드.
+
+    텔레그램 봇 API: multipart/form-data 직접 호출 (call_api는 JSON 전용).
+    파일 50MB 제한.
+    """
+    import os
+    import httpx
+    from .config import get_settings
+
+    settings = get_settings()
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_owner_chat_id
+
+    # DB Setting 우선 시도 (api_manager의 _resolve_secret과 동일 정책)
+    from .models import Setting
+    row = db.query(Setting).filter_by(key="telegram_bot_token").first()
+    if row and row.value:
+        token = row.value
+    row = db.query(Setting).filter_by(key="telegram_owner_chat_id").first()
+    if row and row.value:
+        chat_id = row.value
+
+    if not token or not chat_id:
+        return {"ok": False, "error": "텔레그램 토큰/chat_id 미설정", "status_code": 0, "data": None}
+
+    if not os.path.exists(video_path):
+        return {"ok": False, "error": f"파일 없음: {video_path}", "status_code": 0, "data": None}
+
+    file_size = os.path.getsize(video_path)
+    if file_size > 49 * 1024 * 1024:  # 50MB 제한, 안전 마진
+        return {
+            "ok": False,
+            "error": f"파일 너무 큼 ({file_size // 1024 // 1024}MB > 49MB 한도)",
+            "status_code": 0, "data": None,
+        }
+
+    url = f"{settings.telegram_api_base}/bot{token}/sendVideo"
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            with open(video_path, "rb") as f:
+                files = {"video": (os.path.basename(video_path), f, "video/mp4")}
+                data = {
+                    "chat_id": chat_id,
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                    "supports_streaming": "true",
+                }
+                r = await client.post(url, files=files, data=data)
+
+        try:
+            rdata = r.json()
+        except Exception:
+            rdata = {"raw": r.text[:500]}
+        ok = r.is_success and bool(isinstance(rdata, dict) and rdata.get("ok"))
+
+        # 감사 로그 (api_calls 테이블)
+        from .models import ApiCall
+        try:
+            db.add(ApiCall(
+                provider="telegram",
+                operation="sendVideo",
+                requester="telegram",
+                status_code=r.status_code,
+                ok=ok,
+                duration_ms=0,
+                request_summary={"file_size": file_size, "job_id": job_id},
+                response_summary={"message_id": ((rdata.get("result") or {}) if isinstance(rdata, dict) else {}).get("message_id")},
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        if ok:
+            return {"ok": True, "status_code": r.status_code, "data": rdata, "error": ""}
+        else:
+            api_msg = (rdata.get("description") if isinstance(rdata, dict) else "") or ""
+            return {
+                "ok": False,
+                "status_code": r.status_code,
+                "data": rdata,
+                "error": f"Telegram HTTP {r.status_code}{' — ' + api_msg if api_msg else ''}",
+            }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "status_code": 0, "data": None}
+
+
 async def report_batch(db: Session, batch: Batch) -> dict:
     """배치 시작 시 / 완료 시 owner에게 요약 메시지."""
     jobs = db.query(Job).filter_by(batch_id=batch.id).order_by(Job.id).all()
