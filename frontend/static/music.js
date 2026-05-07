@@ -244,6 +244,7 @@ function onCuratorApply() {
 // 보관곡 (다운로드된 audio 재생 + 체크 후 영상 + 삭제)
 // ─────────────────────────────────────────────────
 const archivePicked = new Set();
+let archivePolling = null;
 
 function refreshArchivePickCount() {
   const n = archivePicked.size;
@@ -272,8 +273,29 @@ async function loadArchive() {
       rejected: '<span class="badge fail">거절</span>',
       pending_review: '<span class="badge tint">검토 대기</span>',
     })[s] || '';
+    let anyRendering = false;
     wrap.innerHTML = items.map(it => {
       const checked = archivePicked.has(String(it.id)) ? 'checked' : '';
+      const v = it.video;
+      let videoHtml = '';
+      if (v) {
+        if (v.status === 'rendering') {
+          anyRendering = true;
+          videoHtml = `<div class="archive-video-row" style="margin-top:8px;">
+            <span class="badge run"><span class="dot"></span>영상 인코딩 중…</span>
+          </div>`;
+        } else if (v.status === 'done' && v.download_url) {
+          videoHtml = `<div class="archive-video-row" style="margin-top:8px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <a class="btn btn-sm btn-primary" href="${v.download_url}" download>🎬 영상 다운로드 (mp4)</a>
+            <span class="hint">${v.size_mb}MB · ${v.duration_sec}s</span>
+          </div>`;
+        } else if (v.status === 'failed') {
+          videoHtml = `<div class="archive-video-row" style="margin-top:8px;">
+            <span class="badge fail">영상 실패</span>
+            <span class="hint" style="margin-left:8px;">${(v.error || '').slice(0, 120)}</span>
+          </div>`;
+        }
+      }
       return `
       <div class="archive-item">
         <div class="archive-head" style="display:flex; gap:10px; align-items:center;">
@@ -288,8 +310,16 @@ async function loadArchive() {
         ${it.issue ? `<div class="archive-issue">${it.issue}</div>` : ''}
         <div class="archive-meta">${it.style || ''} · ${it.size_kb}KB</div>
         <audio controls preload="none" src="${it.audio_url}" style="width: 100%; margin-top: 8px;"></audio>
+        ${videoHtml}
       </div>`;
     }).join('');
+
+    // 영상 인코딩 중인 곡이 있으면 6초마다 자동 새로고침 (완료되면 다운로드 버튼 보이도록)
+    if (anyRendering && !archivePolling) {
+      archivePolling = setInterval(loadArchive, 6000);
+    } else if (!anyRendering && archivePolling) {
+      clearInterval(archivePolling); archivePolling = null;
+    }
     document.querySelectorAll('[data-archive-del]').forEach(btn => {
       btn.addEventListener('click', () => onDeleteArchive(btn.dataset.archiveDel));
     });
@@ -339,9 +369,11 @@ async function onMakeVideosFromArchive() {
       method: 'POST',
       body: JSON.stringify({ job_ids: ids }),
     });
-    status.innerHTML = `✓ ${res.queued}곡 큐 등록 완료. 진행은 텔레그램으로 보고됩니다.`;
+    status.innerHTML = `✓ ${res.queued}곡 큐 등록 완료. 인코딩 끝나면 다운로드 버튼이 활성화됩니다 (텔레그램에도 전송).`;
     archivePicked.clear();
     onArchivePickNone();
+    // 즉시 새로고침 → "인코딩 중" 뱃지 + 자동 폴링 시작
+    setTimeout(loadArchive, 600);
   } catch (e) {
     status.className = 'empty';
     status.textContent = '✗ 실패: ' + e.message;

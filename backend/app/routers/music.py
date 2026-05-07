@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from ..db import get_db
-from ..models import Job, Agent, AuditLog
+from ..models import Job, Agent, AuditLog, Video
 from ..api_manager import call_api
 from ..songwriter import compose_plan as songwriter_compose
 from .. import archiver
@@ -210,9 +210,26 @@ def _serialize_job(j: Job) -> dict:
 
 
 # ── 곡 보관 (다운로드 + 사이트 재생 + 삭제) ─────────────────
+def _latest_video_for_jobs(db: Session, job_ids: list[int]) -> dict[int, Video]:
+    """job_id별 최신 Video 1개씩 (state 표시용)."""
+    if not job_ids:
+        return {}
+    rows = (
+        db.query(Video)
+        .filter(Video.job_id.in_(job_ids))
+        .order_by(Video.job_id, desc(Video.id))
+        .all()
+    )
+    out: dict[int, Video] = {}
+    for v in rows:
+        # 같은 job_id 안에서는 desc(id) 첫 번째 = 최신만 남김
+        out.setdefault(v.job_id, v)
+    return out
+
+
 @router.get("/archive")
 def list_archived(limit: int = 50, db: Session = Depends(get_db)):
-    """보관된 곡 목록 (최신순)."""
+    """보관된 곡 목록 (최신순). 곡별 최신 영상 상태도 포함."""
     rows = (
         db.query(Job)
         .filter(Job.local_audio_path != "", Job.deleted_at.is_(None))
@@ -220,8 +237,22 @@ def list_archived(limit: int = 50, db: Session = Depends(get_db)):
         .limit(min(limit, 200))
         .all()
     )
-    return [
-        {
+    videos = _latest_video_for_jobs(db, [j.id for j in rows])
+    out = []
+    for j in rows:
+        v = videos.get(j.id)
+        video_block = None
+        if v:
+            video_block = {
+                "id": v.id,
+                "status": v.status,                                  # rendering | done | failed
+                "size_mb": (v.file_size // 1024 // 1024) if v.file_size else 0,
+                "duration_sec": v.duration_sec or 0,
+                "download_url": f"/api/music/video-file/{j.id}" if v.status == "done" else "",
+                "error": v.error or "",
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            }
+        out.append({
             "id": j.id,
             "title": (j.input or {}).get("title", f"#{j.id}"),
             "issue": (j.input or {}).get("issue", ""),
@@ -232,9 +263,31 @@ def list_archived(limit: int = 50, db: Session = Depends(get_db)):
             "audio_url": f"/api/music/audio/{j.id}",
             "archived_at": j.archived_at.isoformat() if j.archived_at else None,
             "created_at": j.created_at.isoformat() if j.created_at else None,
-        }
-        for j in rows
-    ]
+            "video": video_block,
+        })
+    return out
+
+
+@router.get("/video-file/{job_id}")
+def serve_video(job_id: int, db: Session = Depends(get_db)):
+    """곡의 최신 mp4 영상 다운로드. 사용자가 직접 받아 YouTube 등에 업로드용."""
+    v = (
+        db.query(Video)
+        .filter(Video.job_id == job_id, Video.status == "done")
+        .order_by(desc(Video.id))
+        .first()
+    )
+    if not v or not v.video_path:
+        raise HTTPException(404, "영상 파일 없음 (아직 인코딩 안 됐거나 실패)")
+    from pathlib import Path as _P
+    p = _P(v.video_path)
+    if not p.exists():
+        raise HTTPException(404, "영상 파일이 디스크에 없음")
+    job = db.get(Job, job_id)
+    title = (job.input or {}).get("title", f"song_{job_id}") if job else f"song_{job_id}"
+    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in title)[:80]
+    filename = f"{job_id}_{safe}.mp4"
+    return FileResponse(p, media_type="video/mp4", filename=filename)
 
 
 @router.get("/audio/{job_id}")
