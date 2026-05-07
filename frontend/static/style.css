@@ -485,6 +485,40 @@ label.field > small {
   pointer-events: none;
 }
 
+/* ============ Team / Codes ============ */
+.code-item, .member-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+}
+.code-main {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.code-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  background: white;
+  padding: 4px 12px;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--accent);
+}
+.member-info { flex: 1; min-width: 0; }
+.member-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.member-controls { display: flex; gap: 8px; align-items: center; }
+
 /* ============ Curator pills ============ */
 .curator-group { margin-bottom: 14px; }
 .curator-label {

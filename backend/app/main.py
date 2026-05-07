@@ -27,6 +27,7 @@ from .routers import music as music_router
 from .routers import settings as settings_router
 from .routers import batch as batch_router
 from .routers import telegram as telegram_router
+from .routers import team as team_router
 from .seed import run_seed
 
 
@@ -94,6 +95,7 @@ app.include_router(music_router.router)
 app.include_router(settings_router.router)
 app.include_router(batch_router.router)
 app.include_router(telegram_router.router)
+app.include_router(team_router.router)
 
 
 @app.get("/api/health")
@@ -126,3 +128,8 @@ def page_department(slug: str):
 @app.get("/secrets")
 def page_secrets():
     return FileResponse(FRONTEND_DIR / "secrets.html")
+
+
+@app.get("/team")
+def page_team():
+    return FileResponse(FRONTEND_DIR / "team.html")

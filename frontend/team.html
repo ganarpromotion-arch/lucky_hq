@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>👥 팀 — Lucky HQ</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="page">
+  <header class="topbar">
+    <nav class="crumb">
+      <a href="/">🍀 Lucky HQ</a>
+      <span class="sep">›</span>
+      <span class="here">팀</span>
+    </nav>
+    <div class="meta">
+      <span class="clock" id="clock" title="한국시간 (KST)">--:--:--</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>가입 코드</h2>
+      <p class="desc">
+        owner가 발급하는 1회용 코드. 신규 멤버는 텔레그램 봇에 <code>/join CODE</code> 보내서 가입합니다.
+      </p>
+    </div>
+    <div class="card-body">
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap; margin-bottom: 14px;">
+        <select id="role-select" class="input" style="width: 160px;">
+          <option value="manager">최고 팀장 (owner와 동급)</option>
+          <option value="operator">운영자</option>
+          <option value="approver">승인자</option>
+          <option value="viewer">뷰어 (보고만)</option>
+          <option value="guest">게스트</option>
+        </select>
+        <select id="hours-select" class="input" style="width: 130px;">
+          <option value="24">24시간 유효</option>
+          <option value="1">1시간</option>
+          <option value="168">7일</option>
+        </select>
+        <button id="btn-create-code" class="btn btn-primary">코드 발급</button>
+      </div>
+      <div id="codes-list">
+        <div class="empty">발급된 코드가 없습니다.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>멤버</h2>
+      <p class="desc">텔레그램으로 가입한 사용자 + env에 등록된 owner.</p>
+    </div>
+    <div class="card-body">
+      <div id="members-list">
+        <div class="empty">불러오는 중…</div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="/static/clock.js"></script>
+<script src="/static/team.js"></script>
+</body>
+</html>

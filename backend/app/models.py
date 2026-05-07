@@ -154,3 +154,43 @@ class Video(Base):
     error = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TelegramSubscriber(Base):
+    """텔레그램으로 본부에 가입한 사용자.
+
+    역할 6단계 (메모리 정책):
+      - owner       : 모든 권한
+      - manager     : 최고 팀장 — owner와 동일한 메시지/권한
+      - operator    : 작업 실행 가능
+      - approver    : 승인만 가능
+      - viewer      : 보고만 받음
+      - guest       : 등록만 됨
+    """
+    __tablename__ = "telegram_subscribers"
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String(64), unique=True, nullable=False, index=True)
+    role = Column(String(32), default="viewer")  # owner | manager | operator | approver | viewer | guest
+    nickname = Column(String(128), default="")
+    username = Column(String(128), default="")   # 텔레그램 @username
+    first_name = Column(String(128), default="")
+    is_active = Column(Boolean, default=True)
+    receives_song_reports = Column(Boolean, default=True)   # 곡 보고 받음
+    receives_chat_replies = Column(Boolean, default=True)   # 챗봇 응답 가능
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=True)
+
+
+class TelegramJoinCode(Base):
+    """1회용 가입 코드 (owner가 발급, 멤버가 봇에 /join CODE)."""
+    __tablename__ = "telegram_join_codes"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(16), unique=True, nullable=False, index=True)
+    role = Column(String(32), default="manager")  # 발급 시 부여될 역할
+    used = Column(Boolean, default=False)
+    used_by_chat_id = Column(String(64), nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    used_at = Column(DateTime, nullable=True)

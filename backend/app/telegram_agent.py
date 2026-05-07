@@ -34,8 +34,7 @@ async def send_text(db: Session, text: str, parse_mode: str = "HTML") -> dict:
 
 
 async def send_audio_for_job(db: Session, job: Job) -> dict:
-    """곡 1개를 owner에게 audio 메시지로 전송.
-    텔레그램이 audio_url을 직접 가져가서 재생 가능한 형태로 변환해줌."""
+    """곡 1개를 owner + 모든 활성 구독자에게 audio로 전송."""
     audio_url = (job.output or {}).get("audio_url")
     title = (job.input or {}).get("title", f"곡 #{job.id}")
     style = (job.input or {}).get("style", "")
@@ -48,33 +47,52 @@ async def send_audio_for_job(db: Session, job: Job) -> dict:
         f"채택은 이 메시지에 <b>✓</b> · 거절은 <b>✗</b> 로 답장"
     )
 
-    if not audio_url:
-        # 오디오 URL 없으면 텍스트만이라도 보냄
-        return await send_text(db, caption + "\n\n⚠️ audio_url 없음")
+    from .config import get_settings
+    from .models import TelegramSubscriber
+    settings = get_settings()
+    recipients: set[str] = set()
+    if settings.telegram_owner_chat_id:
+        recipients.add(str(settings.telegram_owner_chat_id))
+    for s in db.query(TelegramSubscriber).filter_by(
+        is_active=True, receives_song_reports=True
+    ).all():
+        recipients.add(str(s.chat_id))
 
-    result = await call_api(
-        db, provider="telegram", operation="sendAudio",
-        payload={
-            "audio": audio_url,
-            "caption": caption,
-            "parse_mode": "HTML",
-            "title": title,
-            "performer": "Lucky HQ",
-        },
-        requester="telegram",
-        timeout=90.0,  # 텔레그램이 audio_url 가져와야 해서 시간 좀 걸림
-    )
-    if result.get("ok"):
-        try:
-            msg_id = ((result.get("data") or {}).get("result") or {}).get("message_id")
-            if msg_id:
-                job.telegram_message_id = int(msg_id)
-                job.review_status = "pending_review"
-                _audit(db, "telegram.song_sent", target=f"job:{job.id}",
-                       detail={"message_id": msg_id})
-        except Exception:
-            pass
-    return result
+    if not audio_url:
+        # audio_url 없으면 텍스트만
+        for cid in recipients:
+            await send_text(db, caption + "\n\n⚠️ audio_url 없음")
+        return {"ok": False, "error": "no audio_url"}
+
+    last_result = {}
+    owner_id = str(settings.telegram_owner_chat_id) if settings.telegram_owner_chat_id else None
+    for cid in recipients:
+        result = await call_api(
+            db, provider="telegram", operation="sendAudio",
+            payload={
+                "chat_id": cid,
+                "audio": audio_url,
+                "caption": caption,
+                "parse_mode": "HTML",
+                "title": title,
+                "performer": "Lucky HQ",
+            },
+            requester="telegram",
+            timeout=90.0,
+        )
+        last_result = result
+        # owner의 message_id만 Job에 저장 (✓/✗ 매칭용)
+        if result.get("ok") and cid == owner_id:
+            try:
+                msg_id = ((result.get("data") or {}).get("result") or {}).get("message_id")
+                if msg_id:
+                    job.telegram_message_id = int(msg_id)
+                    job.review_status = "pending_review"
+                    _audit(db, "telegram.song_sent", target=f"job:{job.id}",
+                           detail={"message_id": msg_id})
+            except Exception:
+                pass
+    return last_result
 
 
 async def send_video_file(db: Session, video_path: str, caption: str,
@@ -167,7 +185,10 @@ async def send_video_file(db: Session, video_path: str, caption: str,
 
 
 async def report_batch(db: Session, batch: Batch) -> dict:
-    """배치 시작 시 / 완료 시 owner에게 요약 메시지."""
+    """배치 시작 시 / 완료 시 모든 활성 멤버에게 요약 메시지.
+
+    owner + receives_song_reports=True인 멤버 모두에게 발송.
+    """
     jobs = db.query(Job).filter_by(batch_id=batch.id).order_by(Job.id).all()
     done = [j for j in jobs if j.status == "done"]
     failed = [j for j in jobs if j.status == "failed"]
@@ -190,4 +211,27 @@ async def report_batch(db: Session, batch: Batch) -> dict:
         lines.append("")
         lines.append("아래 곡들을 하나씩 보내드립니다. ✓ / ✗ 로 답장해주세요.")
 
-    return await send_text(db, "\n".join(lines))
+    text = "\n".join(lines)
+
+    # 수신 대상: env owner + receives_song_reports=True인 활성 구독자
+    from .config import get_settings
+    settings = get_settings()
+    recipients: set[str] = set()
+    if settings.telegram_owner_chat_id:
+        recipients.add(str(settings.telegram_owner_chat_id))
+    from .models import TelegramSubscriber
+    subs = db.query(TelegramSubscriber).filter_by(
+        is_active=True, receives_song_reports=True
+    ).all()
+    for s in subs:
+        recipients.add(str(s.chat_id))
+
+    last_result = {}
+    for cid in recipients:
+        last_result = await call_api(
+            db, provider="telegram", operation="sendMessage",
+            payload={"chat_id": cid, "text": text, "parse_mode": "HTML",
+                     "disable_web_page_preview": True},
+            requester="telegram",
+        )
+    return last_result
