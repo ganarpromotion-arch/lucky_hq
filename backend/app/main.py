@@ -84,7 +84,20 @@ async def lifespan(app: FastAPI):
     run_seed()
     # 3) 텔레그램 webhook 등록 (env 있으면)
     await _register_telegram_webhook()
-    yield
+    # 4) 스케줄러 시작 (매일 아침 8시 KST 큐레이터)
+    from .scheduler import make_scheduler
+    sched = make_scheduler()
+    sched.start()
+    log.info(f"scheduler 시작: jobs={[j.id for j in sched.get_jobs()]}")
+    app.state.scheduler = sched
+    try:
+        yield
+    finally:
+        try:
+            sched.shutdown(wait=False)
+            log.info("scheduler 종료")
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Lucky HQ", version="1.0.0", lifespan=lifespan)

@@ -92,6 +92,20 @@
     </div>
   </section>
 
+  <!-- 일일 큐레이터 (자동 8시) -->
+  <section class="card">
+    <div class="card-head" style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+      <div>
+        <h2>📅 매일 아침 8시 큐레이터</h2>
+        <p class="desc">자동으로 오늘의 5x3 안을 텔레그램으로 보냅니다. 답장 형식: <code>1-3-2 x6</code></p>
+      </div>
+      <button id="btn-daily-trigger" class="btn btn-sm">🔄 지금 발송</button>
+    </div>
+    <div class="card-body">
+      <div id="daily-status" class="empty">상태 확인 중…</div>
+    </div>
+  </section>
+
   <!-- 큐레이터 5x3 안 -->
   <section class="card">
     <div class="card-head">

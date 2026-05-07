@@ -194,3 +194,31 @@ class TelegramJoinCode(Base):
     expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     used_at = Column(DateTime, nullable=True)
+
+
+class DailyProposal(Base):
+    """매일 아침 8시 큐레이터가 만든 5x3 안 + owner 응답.
+
+    상태:
+      - waiting   : 발송했지만 응답 대기
+      - chosen    : owner가 골랐고 배치 트리거됨
+      - skipped   : 응답 없이 다음 날까지 넘어감 (패스)
+      - cancelled : owner가 명시적으로 취소
+    """
+    __tablename__ = "daily_proposals"
+
+    id = Column(Integer, primary_key=True)
+    date_kst = Column(String(16), nullable=False, index=True)  # "2026-05-07"
+    languages = Column(JSON, default=list)
+    moods = Column(JSON, default=list)
+    keywords = Column(JSON, default=list)
+    status = Column(String(32), default="waiting")
+    chosen_language_idx = Column(Integer, nullable=True)
+    chosen_mood_idx = Column(Integer, nullable=True)
+    chosen_keyword_idx = Column(Integer, nullable=True)
+    chosen_by_chat_id = Column(String(64), nullable=True)
+    triggered_batch_id = Column(Integer, nullable=True)
+    telegram_message_ids = Column(JSON, default=list)
+    sent_at = Column(DateTime, nullable=True)
+    chosen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

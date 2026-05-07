@@ -266,3 +266,44 @@ async def curator_options(db: Session = Depends(get_db)):
     Gemini로 오늘 트렌드/계절 반영. 실패 시 폴백."""
     from ..curator import propose_options
     return await propose_options(db)
+
+
+# ── 일일 큐레이터 수동 트리거 ────────────────────────────
+@router.post("/daily/trigger-now")
+async def trigger_daily_now(db: Session = Depends(get_db)):
+    """매일 8시 자동 외에 수동으로 트리거 (테스트 + 비상시)."""
+    from ..daily_curator import make_and_send_today_proposal
+    return await make_and_send_today_proposal(db)
+
+
+@router.get("/daily/today")
+def get_today_proposal(db: Session = Depends(get_db)):
+    """오늘 발송된 proposal 상태."""
+    from ..models import DailyProposal
+    from ..daily_curator import _kst_today
+    p = (
+        db.query(DailyProposal)
+        .filter_by(date_kst=_kst_today())
+        .order_by(DailyProposal.id.desc())
+        .first()
+    )
+    if not p:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "id": p.id,
+        "date_kst": p.date_kst,
+        "status": p.status,
+        "languages": p.languages,
+        "moods": p.moods,
+        "keywords": p.keywords,
+        "chosen": {
+            "language_idx": p.chosen_language_idx,
+            "mood_idx": p.chosen_mood_idx,
+            "keyword_idx": p.chosen_keyword_idx,
+            "by_chat_id": p.chosen_by_chat_id,
+        } if p.status == "chosen" else None,
+        "triggered_batch_id": p.triggered_batch_id,
+        "sent_at": p.sent_at.isoformat() if p.sent_at else None,
+        "chosen_at": p.chosen_at.isoformat() if p.chosen_at else None,
+    }

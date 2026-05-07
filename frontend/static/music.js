@@ -104,7 +104,74 @@ async function loadSettings() {
 }
 
 // ─────────────────────────────────────────────────
-// 큐레이터 5x3 안
+// 일일 큐레이터 (매일 아침 8시 자동)
+// ─────────────────────────────────────────────────
+async function loadDailyStatus() {
+  try {
+    const d = await fetchJSON('/api/music/daily/today');
+    const wrap = $('#daily-status');
+    if (!d.exists) {
+      wrap.className = 'empty';
+      wrap.textContent = '오늘 발송된 안이 없습니다. 매일 8시에 자동 발송됩니다.';
+      return;
+    }
+    const statusLabel = {
+      waiting: '<span class="badge tint">응답 대기</span>',
+      chosen:  `<span class="badge ok">선택됨 → 배치 #${d.triggered_batch_id || '?'}</span>`,
+      skipped: '<span class="badge">패스</span>',
+      cancelled: '<span class="badge fail">취소</span>',
+    }[d.status] || d.status;
+    const sentTime = d.sent_at
+      ? new Date(d.sent_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })
+      : '-';
+
+    let chosenInfo = '';
+    if (d.chosen) {
+      const lang = d.languages[d.chosen.language_idx];
+      const mood = d.moods[d.chosen.mood_idx];
+      const kw = d.keywords[d.chosen.keyword_idx];
+      chosenInfo = `<div class="hint" style="margin-top:6px;">
+        선택: ${kw} · ${mood} · ${lang}
+      </div>`;
+    }
+
+    wrap.className = '';
+    wrap.innerHTML = `
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+        ${statusLabel}
+        <span class="hint">발송 ${sentTime} · 안 #${d.id}</span>
+      </div>
+      ${chosenInfo}
+    `;
+  } catch (e) { /* 무시 */ }
+}
+
+async function onDailyTrigger() {
+  if (!confirm('지금 일일 안을 텔레그램으로 발송할까요?\n(이미 오늘 발송됐으면 무시됩니다)')) return;
+  const btn = $('#btn-daily-trigger');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '발송 중…';
+  try {
+    const r = await fetchJSON('/api/music/daily/trigger-now', { method: 'POST' });
+    if (r.ok) {
+      showToast(`발송 완료 (안 #${r.proposal_id}, ${r.sent_to}명에게)`);
+    } else {
+      showToast(r.reason === 'already_exists'
+        ? `오늘 이미 발송됨 (안 #${r.proposal_id})`
+        : '실패: ' + (r.reason || '알 수 없음'));
+    }
+    await loadDailyStatus();
+  } catch (e) {
+    showToast('실패: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// ─────────────────────────────────────────────────
+// 큐레이터 5x3 안 (수동)
 // ─────────────────────────────────────────────────
 const curatorPicks = { language: null, mood: null, keyword: null };
 
@@ -463,6 +530,7 @@ async function onGenerate() {
   $('#btn-generate').addEventListener('click', onGenerate);
   $('#btn-curator').addEventListener('click', onCurator);
   $('#btn-curator-apply').addEventListener('click', onCuratorApply);
+  $('#btn-daily-trigger').addEventListener('click', onDailyTrigger);
 
   // 4개 배치 버튼 일반화
   document.querySelectorAll('[data-batch]').forEach(btn => {
@@ -477,9 +545,11 @@ async function onGenerate() {
   loadSettings();
   loadLatestBatch();
   loadArchive();
+  loadDailyStatus();
   refreshJobs();
   setInterval(loadAgents, 8000);
   setInterval(loadSettings, 12000);
   setInterval(loadArchive, 15000);
+  setInterval(loadDailyStatus, 30000);
   setInterval(refreshJobs, 5000);
 })();

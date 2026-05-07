@@ -212,9 +212,32 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db),
         await _send_back(db, chat_id, f"알 수 없는 명령: {cmd}\n<code>/help</code> 확인하세요.")
         return {"ok": True}
 
-    # ── 답장 + ✓/✗ ──
+    # ── 답장 처리 ──
     if reply_to_msg_id:
-        # 채택/거절 권한: owner, manager, approver
+        # 1) 일일 큐레이터 안에 대한 답장? (1-3-2 / 패스)
+        from ..daily_curator import get_active_proposal, parse_response, handle_choice
+        active = get_active_proposal(db)
+        if active:
+            # 답장 대상이 큐레이터 안 메시지 중 하나인지 확인
+            our_msg_ids = [m.get("message_id") for m in (active.telegram_message_ids or [])]
+            if int(reply_to_msg_id) in our_msg_ids:
+                # 권한 체크: owner 또는 manager만
+                ok_role, role = _can_chat(db, chat_id, settings)
+                if role not in ("owner", "manager"):
+                    await _send_back(db, chat_id, "⚠ 큐레이터 안 응답은 owner 또는 최고 팀장만 가능합니다.")
+                    return {"ok": True}
+                parsed = parse_response(text)
+                if parsed is None:
+                    await _send_back(
+                        db, chat_id,
+                        "응답 형식: <code>1-3-2</code> 또는 <code>1-3-2 x6</code> 또는 <code>패스</code>"
+                    )
+                    return {"ok": True}
+                reply = await handle_choice(db, active, parsed, chat_id, role)
+                await _send_back(db, chat_id, reply)
+                return {"ok": True}
+
+        # 2) 곡에 대한 ✓/✗ 답장
         ok_role, role = _can_chat(db, chat_id, settings)
         can_review = (role in ("owner", "manager", "approver"))
         approve = any(t in text for t in ("✓", "✔", "채택", "ok", "OK", "좋아", "좋음", "yes", "Yes", "YES"))
