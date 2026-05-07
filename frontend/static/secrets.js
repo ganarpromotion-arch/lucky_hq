@@ -25,6 +25,11 @@ const editing = new Set();   // 수정 모드인 키들
 function renderItem(item) {
   const isEditing = editing.has(item.key) || !item.has_value;
   const usedBy = (item.used_by || []).join(', ');
+  const sourceBadge = item.has_value
+    ? (item.source === 'env'
+        ? '<span class="badge info">Railway env</span>'
+        : '<span class="badge ok">등록됨</span>')
+    : '<span class="badge">미등록</span>';
   return `
     <div class="secret-item ${item.has_value ? 'is-set' : 'is-empty'}">
       <div class="secret-head">
@@ -32,7 +37,7 @@ function renderItem(item) {
           <div class="secret-label">
             ${item.label}
             ${item.required ? '<span class="badge tint">필수</span>' : ''}
-            ${item.has_value ? '<span class="badge ok">등록됨</span>' : '<span class="badge">미등록</span>'}
+            ${sourceBadge}
           </div>
           <div class="secret-key">${item.key}${usedBy ? ` · ${usedBy}` : ''}</div>
         </div>
@@ -44,11 +49,11 @@ function renderItem(item) {
 
       ${isEditing ? `
         <div class="secret-edit">
-          <input id="in-${item.key}" type="password" class="input mono" placeholder="키를 붙여넣고 저장" autocomplete="off">
+          <input id="in-${item.key}" type="password" class="input mono" placeholder="${item.source === 'env' ? 'Railway env 값을 덮어쓰려면 입력' : '키를 붙여넣고 저장'}" autocomplete="off">
           <div class="secret-actions">
             <button class="btn btn-primary btn-sm" data-save="${item.key}">저장</button>
-            ${item.has_value
-              ? `<button class="btn btn-danger btn-sm" data-clear="${item.key}">삭제</button>`
+            ${item.has_value && item.source === 'db'
+              ? `<button class="btn btn-danger btn-sm" data-clear="${item.key}">DB에서 삭제</button>`
               : ''}
             ${item.has_value && editing.has(item.key)
               ? `<button class="btn btn-ghost btn-sm" data-cancel="${item.key}">취소</button>`

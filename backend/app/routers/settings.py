@@ -44,6 +44,30 @@ SECRETS_CATALOG: list[dict] = [
         "used_by": ["songwriter"],
         "required": False,
     },
+    {
+        "key": "telegram_bot_token",
+        "label": "Telegram Bot",
+        "description": "텔레그램 직원이 owner에게 곡을 보고할 때 사용.",
+        "docs_url": "https://t.me/BotFather",
+        "used_by": ["telegram"],
+        "required": True,
+    },
+    {
+        "key": "telegram_owner_chat_id",
+        "label": "Telegram Owner Chat ID",
+        "description": "곡을 보낼 owner의 chat ID (숫자).",
+        "docs_url": "",
+        "used_by": ["telegram"],
+        "required": True,
+    },
+    {
+        "key": "telegram_webhook_secret",
+        "label": "Telegram Webhook Secret",
+        "description": "owner 답장 webhook 검증용 비밀값. 본부와 텔레그램만 안다.",
+        "docs_url": "",
+        "used_by": ["telegram"],
+        "required": True,
+    },
 ]
 
 
@@ -78,16 +102,40 @@ def list_settings(db: Session = Depends(get_db)):
 
 @router.get("/catalog")
 def get_catalog(db: Session = Depends(get_db)):
-    """모든 등록 가능한 API 키 + 현재 등록 상태."""
+    """모든 등록 가능한 API 키 + 현재 등록 상태.
+    DB Setting 우선, 없으면 환경변수 확인."""
+    from ..config import get_settings as _get_app_settings
+    app_settings = _get_app_settings()
+
     by_key = {r.key: r for r in db.query(Setting).all()}
     out = []
     for entry in SECRETS_CATALOG:
         row = by_key.get(entry["key"])
+        # DB에 있으면 DB 우선
+        if row and row.value:
+            value_display = _mask(row.value) if row.is_secret else row.value
+            has_value = True
+            source = "db"
+            updated_at = row.updated_at.isoformat() if row.updated_at else None
+        else:
+            # env 폴백 — pydantic settings에서 동일 이름 필드 찾기
+            env_value = getattr(app_settings, entry["key"], "") or ""
+            if env_value:
+                value_display = _mask(env_value)
+                has_value = True
+                source = "env"
+                updated_at = None
+            else:
+                value_display = ""
+                has_value = False
+                source = "none"
+                updated_at = None
         out.append({
             **entry,
-            "value": _mask(row.value) if row and row.is_secret else (row.value if row else ""),
-            "has_value": bool(row and row.value),
-            "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+            "value": value_display,
+            "has_value": has_value,
+            "source": source,
+            "updated_at": updated_at,
         })
     return out
 
