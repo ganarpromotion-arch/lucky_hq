@@ -254,88 +254,169 @@ function refreshArchivePickCount() {
   if (btn) btn.disabled = (n === 0);
 }
 
-// 미리보기 상태: { [jobId]: { seed, imageUrl, title, mood } }
+// 시안 상태: { [jobId]: { title, mood, proposals: [{proposal_id, provider, image_url}], pickedId, loading } }
 const thumbPreviews = {};
 
-async function fetchThumbPreview(jobId, seed) {
-  const body = (seed === undefined || seed === null) ? {} : { seed };
-  return await fetchJSON(`/api/music/archive/thumbnail-preview/${jobId}`, {
+const PROVIDER_LABEL = {
+  openai: '🎨 OpenAI',
+  gemini: '🎨 Imagen',
+  stability: '🎨 SD3',
+  pil: '🍀 본부 폴백',
+};
+
+async function fetchProposals(jobId) {
+  return await fetchJSON(`/api/music/archive/image-proposals/${jobId}`, {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify({}),
   });
 }
 
+function refreshEncodeBtn() {
+  const btn = $('#btn-thumb-encode');
+  if (!btn) return;
+  const ids = Object.keys(thumbPreviews);
+  const allPicked = ids.length > 0 && ids.every(id => thumbPreviews[id].pickedId);
+  btn.disabled = !allPicked;
+}
+
 function renderThumbPreviews() {
-  const grid = $('#thumb-preview-grid');
-  if (!grid) return;
+  const wrap = $('#thumb-preview-list');
+  if (!wrap) return;
   const ids = Object.keys(thumbPreviews);
   if (!ids.length) {
-    grid.innerHTML = '<div class="empty">미리보기를 만드는 중…</div>';
+    wrap.innerHTML = '<div class="empty">시안을 만드는 중…</div>';
     return;
   }
-  grid.innerHTML = ids.map(jid => {
-    const p = thumbPreviews[jid];
-    return `
-      <div class="thumb-card" data-thumb-job="${jid}" style="background:var(--surface); border-radius:var(--r-sm); overflow:hidden;">
-        <div style="aspect-ratio:9/16; background:#000;">
-          <img src="${p.imageUrl}" alt="thumb #${jid}" style="width:100%; height:100%; object-fit:cover; display:block;">
-        </div>
-        <div style="padding:8px 10px; display:flex; gap:8px; align-items:center; justify-content:space-between;">
-          <div style="font-size:12px; line-height:1.3;">
-            <strong>#${jid}</strong> · ${p.title || ''}<br>
-            <span class="hint">${p.mood || ''} · seed ${p.seed}</span>
+  wrap.innerHTML = ids.map(jid => {
+    const p = thumbPreviews[jid] || {};
+    if (p.loading) {
+      return `<div class="thumb-row" data-job="${jid}" style="padding:12px; background:var(--surface); border-radius:var(--r-sm);">
+        <div style="font-size:13px;"><strong>#${jid}</strong> · ${p.title || ''} <span class="hint">시안 만드는 중…</span></div>
+      </div>`;
+    }
+    if (p.error) {
+      return `<div class="thumb-row" data-job="${jid}" style="padding:12px; background:var(--surface); border-radius:var(--r-sm);">
+        <div style="font-size:13px;"><strong>#${jid}</strong> · ${p.title || ''} <span class="hint fail">실패: ${p.error}</span></div>
+      </div>`;
+    }
+    const cards = (p.proposals || []).map(pr => {
+      const picked = (p.pickedId === pr.proposal_id) ? 'thumb-picked' : '';
+      const label = PROVIDER_LABEL[pr.provider] || pr.provider;
+      return `
+        <div class="thumb-card ${picked}" data-pick-job="${jid}" data-pick-id="${pr.proposal_id}"
+             style="cursor:pointer; background:var(--surface); border-radius:var(--r-sm); overflow:hidden;
+                    border:3px solid ${picked ? 'var(--accent, #2563eb)' : 'transparent'}; transition:border-color .15s;">
+          <div style="aspect-ratio:9/16; background:#000;">
+            <img src="${pr.image_url}" alt="${pr.proposal_id}" style="width:100%; height:100%; object-fit:cover; display:block;">
           </div>
-          <button class="btn btn-sm" type="button" data-thumb-reroll="${jid}" title="다시 뽑기">↻</button>
+          <div style="padding:6px 8px; display:flex; gap:6px; justify-content:space-between; align-items:center;">
+            <span style="font-size:11px;">${label}</span>
+            ${picked ? '<span class="badge ok" style="font-size:10px;">선택됨</span>' : ''}
+          </div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="thumb-row" data-job="${jid}" style="padding:12px; background:var(--surface); border-radius:var(--r-sm);">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+          <div style="flex:1; font-size:13px;">
+            <strong>#${jid}</strong> · ${p.title || ''}
+            <span class="hint" style="margin-left:8px;">${p.mood || ''}</span>
+          </div>
+          <button class="btn btn-sm" type="button" data-reroll-job="${jid}" title="이 곡만 시안 다시 뽑기">↻ 다시</button>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:10px;">
+          ${cards || '<div class="empty">시안 없음</div>'}
         </div>
       </div>`;
   }).join('');
-  document.querySelectorAll('[data-thumb-reroll]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const jid = btn.dataset.thumbReroll;
-      const orig = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = '…';
-      try {
-        const p = await fetchThumbPreview(parseInt(jid, 10), null);
-        thumbPreviews[jid] = {
-          seed: p.seed,
-          imageUrl: p.image_url,
-          title: p.title, mood: p.mood,
-        };
+
+  // 시안 클릭 = 선택
+  document.querySelectorAll('[data-pick-job]').forEach(card => {
+    card.addEventListener('click', () => {
+      const jid = card.dataset.pickJob;
+      const pid = card.dataset.pickId;
+      if (thumbPreviews[jid]) {
+        thumbPreviews[jid].pickedId = pid;
         renderThumbPreviews();
-      } catch (e) {
-        showToast('재생성 실패: ' + e.message);
-        btn.disabled = false;
-        btn.textContent = orig;
+        refreshEncodeBtn();
       }
     });
   });
+  // 다시 뽑기 (개별)
+  document.querySelectorAll('[data-reroll-job]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const jid = parseInt(btn.dataset.rerollJob, 10);
+      thumbPreviews[jid] = { ...(thumbPreviews[jid] || {}), loading: true, proposals: [], pickedId: null };
+      renderThumbPreviews();
+      refreshEncodeBtn();
+      try {
+        const r = await fetchProposals(jid);
+        thumbPreviews[jid] = {
+          title: r.title, mood: r.mood,
+          proposals: r.proposals || [],
+          pickedId: (r.proposals && r.proposals[0]) ? r.proposals[0].proposal_id : null,
+          loading: false,
+        };
+      } catch (err) {
+        thumbPreviews[jid] = { title: '', mood: '', proposals: [], pickedId: null,
+                                error: err.message, loading: false };
+      }
+      renderThumbPreviews();
+      refreshEncodeBtn();
+    });
+  });
+  refreshEncodeBtn();
 }
 
 async function onPreviewThumbnails() {
   if (!archivePicked.size) return;
   const ids = [...archivePicked].map(s => parseInt(s, 10)).filter(n => !isNaN(n));
-  // 이전 미리보기 초기화
   Object.keys(thumbPreviews).forEach(k => delete thumbPreviews[k]);
-  ids.forEach(id => { thumbPreviews[id] = { seed: 0, imageUrl: '', title: '…', mood: '' }; });
+  ids.forEach(id => { thumbPreviews[id] = { title: '', mood: '', proposals: [], pickedId: null, loading: true }; });
 
   $('#thumb-preview-panel').style.display = '';
   $('#thumb-preview-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
   renderThumbPreviews();
 
-  // 병렬 fetch (각 곡당 PIL 한 번)
+  // 병렬 호출 (곡당 등록된 API 수만큼 시안 생성 — 시간 좀 걸림)
   await Promise.all(ids.map(async id => {
     try {
-      const p = await fetchThumbPreview(id, null);
+      const r = await fetchProposals(id);
       thumbPreviews[id] = {
-        seed: p.seed, imageUrl: p.image_url,
-        title: p.title, mood: p.mood,
+        title: r.title, mood: r.mood,
+        proposals: r.proposals || [],
+        pickedId: (r.proposals && r.proposals[0]) ? r.proposals[0].proposal_id : null,
+        loading: false,
       };
     } catch (e) {
-      thumbPreviews[id] = { seed: 0, imageUrl: '', title: '실패', mood: e.message };
+      thumbPreviews[id] = { title: '', mood: '', proposals: [], pickedId: null,
+                             error: e.message, loading: false };
     }
+    renderThumbPreviews();
   }));
+}
+
+async function onRerollAll() {
+  const ids = Object.keys(thumbPreviews);
+  if (!ids.length) return;
+  ids.forEach(id => { thumbPreviews[id] = { ...thumbPreviews[id], loading: true, proposals: [], pickedId: null }; });
   renderThumbPreviews();
+  refreshEncodeBtn();
+  await Promise.all(ids.map(async id => {
+    try {
+      const r = await fetchProposals(parseInt(id, 10));
+      thumbPreviews[id] = {
+        title: r.title, mood: r.mood,
+        proposals: r.proposals || [],
+        pickedId: (r.proposals && r.proposals[0]) ? r.proposals[0].proposal_id : null,
+        loading: false,
+      };
+    } catch (e) {
+      thumbPreviews[id] = { ...thumbPreviews[id], error: e.message, loading: false };
+    }
+    renderThumbPreviews();
+  }));
 }
 
 function onCancelPreview() {
@@ -345,13 +426,13 @@ function onCancelPreview() {
 
 async function onEncodeWithPreviews() {
   const picks = Object.entries(thumbPreviews)
-    .filter(([, v]) => v && v.seed)
-    .map(([jid, v]) => ({ job_id: parseInt(jid, 10), seed: v.seed }));
+    .filter(([, v]) => v && v.pickedId)
+    .map(([jid, v]) => ({ job_id: parseInt(jid, 10), proposal_id: v.pickedId }));
   if (!picks.length) {
-    showToast('미리보기가 아직 준비되지 않았습니다');
+    showToast('시안을 먼저 골라주세요');
     return;
   }
-  if (!confirm(`${picks.length}곡을 보이는 표지 그대로 영상으로 만듭니다.\n곡당 약 30~60초 인코딩.\n\n진행할까요?`)) return;
+  if (!confirm(`${picks.length}곡을 선택한 표지로 영상으로 만듭니다.\n곡당 약 30~60초 인코딩.\n\n진행할까요?`)) return;
 
   const btn = $('#btn-thumb-encode');
   const status = $('#archive-video-status');
@@ -482,6 +563,7 @@ function onArchivePickNone() {
 // 큐레이터 교육 (lessons)
 // ─────────────────────────────────────────────────
 const LESSON_KIND_LABEL = {
+  concept: '★ 기본 컨셉',
   prefer: '🟢 좋아함',
   avoid: '🔴 피할 것',
   example: '⭐ 예시',
@@ -754,6 +836,15 @@ function renderJobs(jobs) {
     const err = j.status === 'failed'
       ? `<div class="err">에러: ${j.error || '알 수 없음'}</div>`
       : '';
+    // 완료된 곡: 보관/삭제 버튼. 진행 중/실패: 삭제만.
+    const isDone = j.status === 'done' && !!j.audio_url;
+    const archiveBtn = isDone
+      ? `<button class="btn btn-sm btn-primary" data-job-archive="${j.id}" title="보관함으로 이동">📦 보관</button>`
+      : '';
+    const delBtn = `<button class="btn btn-sm btn-danger" data-job-del="${j.id}" title="작업 삭제">🗑 삭제</button>`;
+    const actions = `<div class="job-actions" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+      ${archiveBtn}${delBtn}
+    </div>`;
     return `
       <div class="job" data-id="${j.id}">
         ${statusBadge(j.status)}
@@ -764,9 +855,41 @@ function renderJobs(jobs) {
         <div class="id">#${j.id}</div>
         ${audio}
         ${err}
+        ${actions}
       </div>
     `;
   }).join('');
+
+  document.querySelectorAll('[data-job-archive]').forEach(btn => {
+    btn.addEventListener('click', () => onArchiveJob(parseInt(btn.dataset.jobArchive, 10)));
+  });
+  document.querySelectorAll('[data-job-del]').forEach(btn => {
+    btn.addEventListener('click', () => onDeleteJob(parseInt(btn.dataset.jobDel, 10)));
+  });
+}
+
+async function onArchiveJob(jobId) {
+  const btn = document.querySelector(`[data-job-archive="${jobId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '보관 중…'; }
+  try {
+    await fetchJSON(`/api/music/archive/${jobId}`, { method: 'POST' });
+    showToast(`#${jobId} 보관함으로 이동`);
+    await Promise.all([refreshJobs(), loadArchive()]);
+  } catch (e) {
+    showToast('보관 실패: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '📦 보관'; }
+  }
+}
+
+async function onDeleteJob(jobId) {
+  if (!confirm(`작업 #${jobId} 을(를) 삭제할까요? 보관 파일이 있으면 같이 삭제됩니다.`)) return;
+  try {
+    await fetchJSON(`/api/music/jobs/${jobId}`, { method: 'DELETE' });
+    showToast(`#${jobId} 삭제됨`);
+    await refreshJobs();
+  } catch (e) {
+    showToast('삭제 실패: ' + e.message);
+  }
 }
 
 let polling = null;
@@ -830,6 +953,7 @@ async function onGenerate() {
   const btnPrev = $('#btn-archive-preview'); if (btnPrev) btnPrev.addEventListener('click', onPreviewThumbnails);
   const btnEnc = $('#btn-thumb-encode'); if (btnEnc) btnEnc.addEventListener('click', onEncodeWithPreviews);
   const btnPCancel = $('#btn-thumb-cancel'); if (btnPCancel) btnPCancel.addEventListener('click', onCancelPreview);
+  const btnRerollAll = $('#btn-thumb-reroll-all'); if (btnRerollAll) btnRerollAll.addEventListener('click', onRerollAll);
 
   // 4개 배치 버튼 일반화
   document.querySelectorAll('[data-batch]').forEach(btn => {

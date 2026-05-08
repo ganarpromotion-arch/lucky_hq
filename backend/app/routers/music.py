@@ -141,15 +141,37 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/jobs")
-def list_jobs(limit: int = 20, db: Session = Depends(get_db)):
-    rows = (
-        db.query(Job)
-        .filter(Job.department_slug == "music")
-        .order_by(desc(Job.created_at))
-        .limit(min(limit, 100))
-        .all()
+def list_jobs(limit: int = 20, include_archived: bool = False,
+              db: Session = Depends(get_db)):
+    """작업 목록 — 진행 중/완료(미보관) 곡.
+    보관 누른 곡은 자동으로 '보관된 곡' 섹션으로 옮겨가므로 기본 제외."""
+    q = db.query(Job).filter(
+        Job.department_slug == "music",
+        Job.deleted_at.is_(None),
     )
+    if not include_archived:
+        q = q.filter(Job.local_audio_path == "")
+    rows = q.order_by(desc(Job.created_at)).limit(min(limit, 100)).all()
     return [_serialize_job(j) for j in rows]
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job(job_id: int, db: Session = Depends(get_db)):
+    """작업 목록에서 곡 1개 삭제 (보관 파일이 있으면 같이 삭제).
+    이미 archived 상태면 archiver를 통해 파일까지 정리."""
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "곡을 찾을 수 없음")
+
+    # 보관 파일이 있으면 삭제
+    if job.local_audio_path:
+        archiver.delete_archived(db, job)
+    else:
+        job.deleted_at = datetime.utcnow()
+        db.add(AuditLog(actor="owner", action="job.deleted",
+                        target=f"job:{job_id}"))
+        db.commit()
+    return {"ok": True, "id": job_id}
 
 
 @router.get("/jobs/{job_id}")
@@ -203,6 +225,8 @@ def _serialize_job(j: Job) -> dict:
         "external_id": j.external_id,
         "input": j.input or {},
         "audio_url": audio_url,
+        "archived": bool(j.local_audio_path),
+        "archived_at": j.archived_at.isoformat() if j.archived_at else None,
         "error": j.error or "",
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
@@ -305,7 +329,8 @@ def serve_audio(job_id: int, db: Session = Depends(get_db)):
 
 class VideoPick(BaseModel):
     job_id: int
-    seed: int | None = None  # 미리보기에서 고른 시드. 없으면 즉석 랜덤.
+    seed: int | None = None              # PIL 폴백 시드 (proposal_id 없을 때만)
+    proposal_id: str | None = None       # 시안에서 고른 이미지 식별자 (우선)
 
 
 class MakeVideosRequest(BaseModel):
@@ -320,20 +345,21 @@ def make_videos_from_archive(req: MakeVideosRequest, bg: BackgroundTasks,
     """체크한 보관곡들을 영상으로 만들어 텔레그램에 순차 전송 (백그라운드).
     주의: /archive/{job_id} 보다 먼저 등록되어야 'make-videos'가 int 파싱 안 됨."""
     from ..batch_worker import make_video_for_archived_job
+    from .. import image_generator
 
-    # picks 우선, 없으면 job_ids만
-    pairs: list[tuple[int, int | None]]
+    # picks 우선 (proposal_id 또는 seed), 없으면 job_ids만
+    triplets: list[tuple[int, int | None, str | None]]
     if req.picks:
-        pairs = [(p.job_id, p.seed) for p in req.picks]
+        triplets = [(p.job_id, p.seed, p.proposal_id) for p in req.picks]
     else:
-        pairs = [(j, None) for j in req.job_ids]
-    if not pairs:
+        triplets = [(j, None, None) for j in req.job_ids]
+    if not triplets:
         raise HTTPException(400, "job_ids 또는 picks 중 하나는 필요")
 
     # 자격 검증: done + 보관 파일 있는 곡만
     queued: list[int] = []
     skipped: list[dict] = []
-    for jid, seed in pairs:
+    for jid, seed, proposal_id in triplets:
         job = db.get(Job, jid)
         if not job or job.deleted_at is not None:
             skipped.append({"id": jid, "reason": "not_found"}); continue
@@ -341,20 +367,81 @@ def make_videos_from_archive(req: MakeVideosRequest, bg: BackgroundTasks,
             skipped.append({"id": jid, "reason": f"status={job.status}"}); continue
         if not job.local_audio_path:
             skipped.append({"id": jid, "reason": "not_archived"}); continue
-        bg.add_task(make_video_for_archived_job, jid, seed)
+
+        # proposal_id 있으면 디스크 경로 해석
+        preset_path: str | None = None
+        if proposal_id:
+            p = image_generator.get_proposal_path(jid, proposal_id)
+            if p:
+                preset_path = str(p)
+            else:
+                skipped.append({"id": jid, "reason": f"proposal_missing:{proposal_id}"}); continue
+
+        bg.add_task(make_video_for_archived_job, jid, seed, preset_path)
         queued.append(jid)
 
     db.add(AuditLog(
         actor="owner", action="archive.make_videos",
         target=f"jobs:{','.join(str(i) for i in queued)}",
         detail={"queued": queued, "skipped": skipped,
-                "with_seed": bool(req.picks)},
+                "with_proposals": any(t[2] for t in triplets)},
     ))
     db.commit()
     return {"queued": len(queued), "queued_ids": queued, "skipped": skipped}
 
 
-# ── 썸네일 미리보기 (영상 인코딩 전 단계) ───────────────────
+# ── 영상 표지 이미지 시안 (등록된 모든 이미지 API + PIL 폴백) ──
+@router.post("/archive/image-proposals/{job_id}")
+async def image_proposals(job_id: int, db: Session = Depends(get_db)):
+    """곡 1개 → 등록된 모든 이미지 API + PIL 폴백으로 시안 N장 생성.
+    사용자는 시안 중 하나를 골라 영상 인코딩에 사용한다."""
+    from .. import image_generator
+
+    job = db.get(Job, job_id)
+    if not job or job.deleted_at is not None:
+        raise HTTPException(404, "곡을 찾을 수 없음")
+    if job.status != "done" or not job.local_audio_path:
+        raise HTTPException(400, "보관된 곡이 아님 — 시안 생성 불가")
+
+    title = (job.input or {}).get("title", f"#{job_id}")
+    mood = (job.input or {}).get("mood", "modern") or "modern"
+    issue = (job.input or {}).get("issue", "")
+    style = (job.input or {}).get("style", "")
+
+    proposals = await image_generator.generate_proposals(
+        db, job_id=job_id, title=title, mood=mood, issue=issue, style=style,
+        include_pil=True,
+    )
+
+    db.add(AuditLog(
+        actor="video_editor", action="video.proposals_generated",
+        target=f"job:{job_id}",
+        detail={"count": len(proposals),
+                "providers": list({p.provider for p in proposals})},
+    ))
+    db.commit()
+
+    return {
+        "job_id": job_id, "title": title, "mood": mood,
+        "proposals": [p.to_dict() for p in proposals],
+    }
+
+
+@router.get("/archive/proposal-image/{job_id}/{proposal_id}")
+def proposal_image(job_id: int, proposal_id: str, db: Session = Depends(get_db)):
+    """저장된 시안 PNG 서빙."""
+    from .. import image_generator
+    # path traversal 방지
+    if "/" in proposal_id or ".." in proposal_id:
+        raise HTTPException(400, "invalid proposal_id")
+    p = image_generator.get_proposal_path(job_id, proposal_id)
+    if not p:
+        raise HTTPException(404, "시안 이미지 없음")
+    return FileResponse(p, media_type="image/png",
+                        filename=f"{job_id}_{proposal_id}.png")
+
+
+# ── 썸네일 미리보기 (PIL 단일, 레거시 호환) ───────────────────
 class ThumbnailPreviewRequest(BaseModel):
     seed: int | None = None  # 없으면 랜덤 새로 생성
 
@@ -439,7 +526,8 @@ async def curator_options(db: Session = Depends(get_db)):
 
 # ── 큐레이터 교육 (lesson) ───────────────────────────────
 class CuratorLessonUpsert(BaseModel):
-    kind: str = Field(default="prefer", pattern="^(prefer|avoid|example|rule)$")
+    # concept = 부서 전체의 기본 컨셉 (모든 곡에 우선 적용)
+    kind: str = Field(default="prefer", pattern="^(concept|prefer|avoid|example|rule)$")
     text: str = Field(..., min_length=1, max_length=600)
     weight: int = Field(default=1, ge=1, le=5)
     active: bool = True

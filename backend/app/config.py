@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com"
 
+    # Stability AI (SD3 / Core / Ultra) — 영상 표지 이미지 생성용
+    stability_api_key: str = ""
+
     # 작곡가 직원 — 가사 생성 LLM 모델
     # 우선순위: gemini (무료, 빠름) → anthropic → openai → 룰 폴백
     songwriter_llm_provider: str = "gemini"   # gemini | anthropic | openai

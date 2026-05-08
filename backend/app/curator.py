@@ -149,13 +149,14 @@ def _build_lessons_block(db: Session) -> tuple[str, list[int]]:
         by_kind.setdefault(r.kind, []).append(r)
 
     titles = {
+        "concept": "★ 부서 기본 컨셉 (모든 곡의 출발점)",
         "prefer":  "owner가 좋아하는 방향 (반드시 반영)",
         "avoid":   "owner가 싫어하는 패턴 (피할 것)",
         "example": "참고 예시 (이런 결과를 더)",
         "rule":    "원칙 (어기면 안 됨)",
     }
     parts = ["", "── 큐레이터 교육 메모 ──"]
-    for kind in ("rule", "avoid", "prefer", "example"):
+    for kind in ("concept", "rule", "avoid", "prefer", "example"):
         items = by_kind.get(kind, [])
         if not items:
             continue

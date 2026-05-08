@@ -67,8 +67,14 @@ async def call_api(
             result = await _call_anthropic(db, operation, payload, settings, timeout)
         elif provider == "openai":
             result = await _call_openai(db, operation, payload, settings, timeout)
+        elif provider == "openai_image":
+            result = await _call_openai_image(db, operation, payload, settings, timeout)
         elif provider == "gemini":
             result = await _call_gemini(db, operation, payload, settings, timeout)
+        elif provider == "gemini_image":
+            result = await _call_gemini_image(db, operation, payload, settings, timeout)
+        elif provider == "stability":
+            result = await _call_stability(db, operation, payload, settings, timeout)
         elif provider == "telegram":
             result = await _call_telegram(db, operation, payload, settings, timeout)
         else:
@@ -336,6 +342,160 @@ async def _call_gemini(
         "status_code": r.status_code,
         "data": data,
         "error": error_msg,
+    }
+
+
+async def _call_openai_image(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """OpenAI Images API (gpt-image-1 / DALL-E).
+
+    operation: "generate"
+      payload: {"prompt": "...", "size": "1024x1792", "model": "gpt-image-1" | "dall-e-3"}
+      반환 data: {"data": [{"b64_json": "..."}]} 또는 {"data": [{"url": "..."}]}
+    """
+    api_key = _resolve_secret(db, "openai_api_key", settings.openai_api_key)
+    if not api_key:
+        return {"ok": False, "error": "OpenAI API 키 미설정 (이미지 생성용)", "status_code": 0, "data": None}
+
+    if operation != "generate":
+        return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    base = settings.openai_base_url.rstrip("/")
+    model = payload.get("model") or "gpt-image-1"
+    body: dict[str, Any] = {
+        "model": model,
+        "prompt": payload.get("prompt", "")[:4000],
+        "size": payload.get("size", "1024x1536"),
+        "n": 1,
+    }
+    # gpt-image-1은 항상 b64_json만 반환. dall-e-3은 url 또는 b64_json.
+    if model.startswith("dall-e"):
+        body["response_format"] = payload.get("response_format", "b64_json")
+        body["quality"] = payload.get("quality", "standard")
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(f"{base}/v1/images/generations", headers=headers, json=body)
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:500]}
+
+    if r.is_success:
+        error_msg = ""
+    else:
+        api_msg = ""
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                api_msg = err.get("message", "")
+            elif isinstance(err, str):
+                api_msg = err
+        error_msg = f"OpenAI Image HTTP {r.status_code}{' — ' + str(api_msg)[:200] if api_msg else ''}"
+
+    return {"ok": r.is_success, "status_code": r.status_code, "data": data, "error": error_msg}
+
+
+async def _call_gemini_image(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """Google Imagen 3 (Gemini 키 공유).
+
+    operation: "generate"
+      payload: {"prompt": "...", "aspect_ratio": "9:16", "model": "imagen-3.0-generate-002"}
+      반환 data: {"predictions": [{"bytesBase64Encoded": "...", "mimeType": "image/png"}]}
+    """
+    api_key = _resolve_secret(db, "gemini_api_key", settings.gemini_api_key)
+    if not api_key:
+        return {"ok": False, "error": "Gemini/Imagen API 키 미설정", "status_code": 0, "data": None}
+
+    if operation != "generate":
+        return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
+
+    model = payload.get("model") or "imagen-3.0-generate-002"
+    base = settings.gemini_base_url.rstrip("/")
+    url = f"{base}/v1beta/models/{model}:predict?key={api_key}"
+
+    body: dict[str, Any] = {
+        "instances": [{"prompt": payload.get("prompt", "")[:4000]}],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": payload.get("aspect_ratio", "9:16"),
+            "personGeneration": payload.get("person_generation", "allow_adult"),
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(url, json=body, headers={"Content-Type": "application/json"})
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:500]}
+
+    if r.is_success:
+        error_msg = ""
+    else:
+        api_msg = ""
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                api_msg = err.get("message", "")
+            elif isinstance(err, str):
+                api_msg = err
+        error_msg = f"Imagen HTTP {r.status_code}{' — ' + str(api_msg)[:200] if api_msg else ''}"
+
+    return {"ok": r.is_success, "status_code": r.status_code, "data": data, "error": error_msg}
+
+
+async def _call_stability(
+    db: Session, operation: str, payload: dict, settings, timeout: float
+) -> dict[str, Any]:
+    """Stability AI (SD3, Core, Ultra).
+
+    operation: "generate"
+      payload: {"prompt": "...", "aspect_ratio": "9:16", "model": "core" | "sd3" | "ultra"}
+    """
+    api_key = _resolve_secret(db, "stability_api_key", "")
+    if not api_key:
+        return {"ok": False, "error": "Stability API 키 미설정", "status_code": 0, "data": None}
+
+    if operation != "generate":
+        return {"ok": False, "error": f"unknown op: {operation}", "status_code": 0, "data": None}
+
+    model = payload.get("model") or "core"
+    url = f"https://api.stability.ai/v2beta/stable-image/generate/{model}"
+
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "image/*"}
+    files = {
+        "prompt": (None, payload.get("prompt", "")[:5000]),
+        "aspect_ratio": (None, payload.get("aspect_ratio", "9:16")),
+        "output_format": (None, "png"),
+    }
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(url, headers=headers, files=files)
+
+    if r.is_success:
+        # 바이너리 PNG 그대로 — base64로 감싸 반환
+        import base64 as _b64
+        data = {"image_b64": _b64.b64encode(r.content).decode("ascii")}
+        return {"ok": True, "status_code": r.status_code, "data": data, "error": ""}
+
+    try:
+        err_data = r.json()
+        api_msg = err_data.get("errors") or err_data.get("name") or str(err_data)[:200]
+    except Exception:
+        api_msg = r.text[:200]
+    return {
+        "ok": False, "status_code": r.status_code,
+        "data": None,
+        "error": f"Stability HTTP {r.status_code} — {api_msg}",
     }
 
 

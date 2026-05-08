@@ -46,24 +46,25 @@
         <button id="btn-archive-none" class="btn btn-sm" type="button">선택 해제</button>
         <span class="hint" id="archive-pick-hint" style="margin-left:auto;">체크된 곡: <strong id="archive-pick-count">0</strong></span>
         <button id="btn-archive-preview" class="btn btn-primary btn-sm" type="button" disabled>
-          🖼️ 이미지 미리보기 →
+          🖼️ 표지 시안 받기 →
         </button>
       </div>
       <div id="archive-list">
         <div class="empty">불러오는 중…</div>
       </div>
 
-      <!-- 미리보기 패널 (이미지 확인 + 다시 뽑기 → 영상 인코딩) -->
+      <!-- 시안 선택 패널: 등록된 이미지 API들이 곡당 시안 N장 → 곡마다 1장 선택 → 영상 -->
       <div id="thumb-preview-panel" style="display:none; margin-top:18px; padding:16px; background:var(--surface-soft); border-radius:var(--r-md);">
         <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <strong>🖼 영상 표지 미리보기</strong>
-          <span class="hint">마음에 들면 [영상 인코딩 시작], 별로면 곡마다 ↻ 눌러서 다시 뽑기</span>
+          <strong>🖼 표지 시안 선택</strong>
+          <span class="hint">등록된 이미지 API로 만든 시안. 곡마다 1장씩 골라 [영상 만들기]</span>
           <span style="margin-left:auto; display:flex; gap:8px;">
             <button id="btn-thumb-cancel" class="btn btn-sm" type="button">취소</button>
-            <button id="btn-thumb-encode" class="btn btn-primary btn-sm" type="button">🎬 이대로 영상 만들기</button>
+            <button id="btn-thumb-reroll-all" class="btn btn-sm" type="button">↻ 다시 뽑기</button>
+            <button id="btn-thumb-encode" class="btn btn-primary btn-sm" type="button" disabled>🎬 선택한 시안으로 영상 만들기</button>
           </span>
         </div>
-        <div id="thumb-preview-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:14px;"></div>
+        <div id="thumb-preview-list" style="display:flex; flex-direction:column; gap:18px;"></div>
       </div>
 
       <div id="archive-video-status" class="empty" style="margin-top:14px; display:none;"></div>
@@ -126,18 +127,20 @@
   <section class="card">
     <div class="card-head">
       <h2>🎓 큐레이터 교육</h2>
-      <p class="desc">큐레이터에게 owner 취향을 가르칩니다. 여기 적은 메모는 다음 5x3 안 / 일일 발송 시 system prompt에 자동 주입됩니다.</p>
+      <p class="desc">큐레이터에게 owner 취향을 가르칩니다. 여기 적은 메모는 다음 5x3 안 / 일일 발송 시 system prompt에 자동 주입됩니다.
+        <strong>기본 컨셉</strong>은 모든 곡의 출발점이 되는 부서 한줄 컨셉입니다.</p>
     </div>
     <div class="card-body">
-      <div style="display:grid; grid-template-columns: 130px 1fr 90px 70px auto; gap:8px; align-items:center; margin-bottom:14px;">
+      <div style="display:grid; grid-template-columns: 150px 1fr 90px 70px auto; gap:8px; align-items:center; margin-bottom:14px;">
         <select id="lesson-kind" class="input">
+          <option value="concept">★ 기본 컨셉</option>
           <option value="prefer">좋아함 (prefer)</option>
           <option value="avoid">피할 것 (avoid)</option>
           <option value="example">예시 (example)</option>
           <option value="rule">원칙 (rule)</option>
         </select>
         <input id="lesson-text" class="input" type="text" maxlength="600"
-               placeholder="예: 진솔정 키워드는 한 주에 1번만. 영어 후크는 짧고 굵게.">
+               placeholder="예 (기본 컨셉): '40대 한국 직장인의 위로곡 — 영어 한 줄 후크' / '진솔정 곱창전골의 따뜻한 저녁'">
         <select id="lesson-weight" class="input" title="강조 강도 ★1~5">
           <option value="1">★ 1</option>
           <option value="2">★ 2</option>

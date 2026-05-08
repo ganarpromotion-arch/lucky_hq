@@ -47,9 +47,17 @@ SECRETS_CATALOG: list[dict] = [
     {
         "key": "openai_api_key",
         "label": "OpenAI",
-        "description": "작곡가 LLM 폴백 (Gemini, Anthropic 실패 시).",
+        "description": "작곡가 LLM 폴백 + 영상 표지 이미지 생성 (gpt-image-1 / DALL-E).",
         "docs_url": "https://platform.openai.com",
-        "used_by": ["songwriter"],
+        "used_by": ["songwriter", "video_editor"],
+        "required": False,
+    },
+    {
+        "key": "stability_api_key",
+        "label": "Stability AI",
+        "description": "영상 표지 이미지 생성 (SD3 / Core / Ultra). 등록 시 시안 후보에 추가됨.",
+        "docs_url": "https://platform.stability.ai",
+        "used_by": ["video_editor"],
         "required": False,
     },
     {
