@@ -196,6 +196,29 @@ class TelegramJoinCode(Base):
     used_at = Column(DateTime, nullable=True)
 
 
+class CuratorLesson(Base):
+    """큐레이터 교육 자료 — owner가 가르치는 취향/금지/예시 메모.
+
+    kind:
+      - prefer    : "이런 무드/키워드 좋아함"
+      - avoid     : "이런 패턴 싫음"
+      - example   : "이 곡 같은 분위기로 더"
+      - rule      : "원칙 — 진솔정 키워드는 한 주에 1번만 쓰기" 등
+    propose_options 호출 시 active=True 인 lesson을 system prompt에 주입한다.
+    """
+    __tablename__ = "curator_lessons"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(16), nullable=False, default="prefer", index=True)
+    text = Column(Text, nullable=False)             # 짧은 문장 (한국어 OK)
+    weight = Column(Integer, default=1)             # 1~5, 클수록 강하게 강조
+    active = Column(Boolean, default=True, index=True)
+    created_by = Column(String(64), default="owner")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    used_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+
+
 class DailyProposal(Base):
     """매일 아침 8시 큐레이터가 만든 5x3 안 + owner 응답.
 

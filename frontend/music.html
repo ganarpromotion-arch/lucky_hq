@@ -38,12 +38,36 @@
   <section class="card">
     <div class="card-head">
       <h2>📦 보관된 곡</h2>
-      <p class="desc">완성된 곡은 본부에 자동 보관됩니다. 사이트에서 바로 듣고, 필요 없는 건 삭제할 수 있어요.</p>
+      <p class="desc">완성된 곡은 본부에 자동 보관됩니다. 들어보고 마음에 드는 곡만 체크해서 한 번에 영상으로 만들 수 있어요.</p>
     </div>
     <div class="card-body">
+      <div id="archive-toolbar" style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+        <button id="btn-archive-all" class="btn btn-sm" type="button">전체 선택</button>
+        <button id="btn-archive-none" class="btn btn-sm" type="button">선택 해제</button>
+        <span class="hint" id="archive-pick-hint" style="margin-left:auto;">체크된 곡: <strong id="archive-pick-count">0</strong></span>
+        <button id="btn-archive-preview" class="btn btn-primary btn-sm" type="button" disabled>
+          🖼️ 표지 시안 받기 →
+        </button>
+      </div>
       <div id="archive-list">
         <div class="empty">불러오는 중…</div>
       </div>
+
+      <!-- 시안 선택 패널: 등록된 이미지 API들이 곡당 시안 N장 → 곡마다 1장 선택 → 영상 -->
+      <div id="thumb-preview-panel" style="display:none; margin-top:18px; padding:16px; background:var(--surface-soft); border-radius:var(--r-md);">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+          <strong>🖼 표지 시안 선택</strong>
+          <span class="hint">등록된 이미지 API로 만든 시안. 곡마다 1장씩 골라 [영상 만들기]</span>
+          <span style="margin-left:auto; display:flex; gap:8px;">
+            <button id="btn-thumb-cancel" class="btn btn-sm" type="button">취소</button>
+            <button id="btn-thumb-reroll-all" class="btn btn-sm" type="button">↻ 다시 뽑기</button>
+            <button id="btn-thumb-encode" class="btn btn-primary btn-sm" type="button" disabled>🎬 선택한 시안으로 영상 만들기</button>
+          </span>
+        </div>
+        <div id="thumb-preview-list" style="display:flex; flex-direction:column; gap:18px;"></div>
+      </div>
+
+      <div id="archive-video-status" class="empty" style="margin-top:14px; display:none;"></div>
     </div>
   </section>
 
@@ -51,25 +75,18 @@
   <section class="card">
     <div class="card-head">
       <h2>자동 배치 — 곡 만들고 텔레그램 보고</h2>
-      <p class="desc">큐레이터가 이슈 → 작곡가가 가사 → Mureka가 곡 → (영상 옵션) → 텔레그램 전송. 한 번에 한 배치만 실행됩니다.</p>
+      <p class="desc">큐레이터가 이슈 → 작곡가가 가사 → Mureka가 곡 → 텔레그램 audio 전송 + 자동 보관.
+        영상은 위 <strong>📦 보관된 곡</strong>에서 마음에 드는 곡만 체크해서 만드세요.</p>
     </div>
     <div class="card-body">
       <div class="batch-buttons">
         <button class="btn" data-batch="1" data-video="false">
-          <div class="btn-title">▶ 1곡 (audio만)</div>
-          <div class="btn-sub">~1분 · 약 100원</div>
+          <div class="btn-title">▶ 1곡 의뢰 (audio)</div>
+          <div class="btn-sub">~1분 · n곡 옵션은 설정 따름</div>
         </button>
         <button class="btn" data-batch="6" data-video="false">
-          <div class="btn-title">▶ 6곡 (audio만)</div>
-          <div class="btn-sub">~6분 · 약 600원</div>
-        </button>
-        <button class="btn btn-primary" data-batch="1" data-video="true">
-          <div class="btn-title">🎬 1곡 → 영상 mp4</div>
-          <div class="btn-sub">~3분 · 약 100원</div>
-        </button>
-        <button class="btn btn-primary" data-batch="6" data-video="true">
-          <div class="btn-title">🎬 6곡 → 영상 mp4</div>
-          <div class="btn-sub">~15분 · 약 600원</div>
+          <div class="btn-title">▶ 6곡 의뢰 (audio)</div>
+          <div class="btn-sub">~6분 · 텔레그램 audio 보고</div>
         </button>
       </div>
       <div id="batch-status" class="empty" style="margin-top: 18px;">아직 실행하지 않았습니다.</div>
@@ -103,6 +120,42 @@
     </div>
     <div class="card-body">
       <div id="daily-status" class="empty">상태 확인 중…</div>
+    </div>
+  </section>
+
+  <!-- 큐레이터 교육 (lessons) -->
+  <section class="card">
+    <div class="card-head">
+      <h2>🎓 큐레이터 교육</h2>
+      <p class="desc">큐레이터에게 owner 취향을 가르칩니다. 여기 적은 메모는 다음 5x3 안 / 일일 발송 시 system prompt에 자동 주입됩니다.
+        <strong>기본 컨셉</strong>은 모든 곡의 출발점이 되는 부서 한줄 컨셉입니다.</p>
+    </div>
+    <div class="card-body">
+      <div style="display:grid; grid-template-columns: 150px 1fr 90px 70px auto; gap:8px; align-items:center; margin-bottom:14px;">
+        <select id="lesson-kind" class="input">
+          <option value="concept">★ 기본 컨셉</option>
+          <option value="prefer">좋아함 (prefer)</option>
+          <option value="avoid">피할 것 (avoid)</option>
+          <option value="example">예시 (example)</option>
+          <option value="rule">원칙 (rule)</option>
+        </select>
+        <input id="lesson-text" class="input" type="text" maxlength="600"
+               placeholder="예 (기본 컨셉): '40대 한국 직장인의 위로곡 — 영어 한 줄 후크' / '진솔정 곱창전골의 따뜻한 저녁'">
+        <select id="lesson-weight" class="input" title="강조 강도 ★1~5">
+          <option value="1">★ 1</option>
+          <option value="2">★ 2</option>
+          <option value="3" selected>★ 3</option>
+          <option value="4">★ 4</option>
+          <option value="5">★ 5</option>
+        </select>
+        <label style="display:flex; gap:6px; align-items:center; font-size:13px;">
+          <input id="lesson-active" type="checkbox" checked> 활성
+        </label>
+        <button id="btn-lesson-add" class="btn btn-primary btn-sm" type="button">＋ 추가</button>
+      </div>
+      <div id="lesson-list">
+        <div class="empty">불러오는 중…</div>
+      </div>
     </div>
   </section>
 

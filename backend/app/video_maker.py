@@ -347,21 +347,32 @@ async def _probe_duration(path: Path) -> float:
 
 
 async def make_video_for_job(job_id: int, audio_url: str, title: str,
-                             mood: str = "modern", subtitle: str = "") -> dict:
+                             mood: str = "modern", subtitle: str = "",
+                             seed: int | None = None,
+                             preset_image_path: str | None = None) -> dict:
     """곡 1개에 대한 mp4 생성 — 다운로드 + 이미지 + 인코딩.
+
+    preset_image_path가 주어지면 그 이미지를 그대로 사용 (이미지 시안 선택).
+    seed만 있으면 PIL로 동일 이미지 재현.
 
     Returns: {ok, video_path, image_path, duration_sec, file_size, error}
     """
     work = WORK_DIR / f"job_{job_id}"
     work.mkdir(parents=True, exist_ok=True)
 
-    image_path = work / "thumb.png"
     audio_path = work / "audio.mp3"
     video_path = work / "out.mp4"
 
     try:
-        # 1. 정지 이미지
-        make_thumbnail(image_path, title=title, mood=mood, subtitle=subtitle)
+        # 1. 표지 이미지 결정
+        if preset_image_path:
+            preset = Path(preset_image_path)
+            if not preset.exists():
+                raise RuntimeError(f"preset 이미지 없음: {preset_image_path}")
+            image_path = preset
+        else:
+            image_path = work / "thumb.png"
+            make_thumbnail(image_path, title=title, mood=mood, subtitle=subtitle, seed=seed)
 
         # 2. 오디오 다운로드
         await download_audio(audio_url, audio_path)
