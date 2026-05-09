@@ -50,33 +50,126 @@ class ImageProposal:
         }
 
 
-def _build_prompt(title: str, mood: str, issue: str, style: str) -> str:
-    """곡 정보 → 이미지 프롬프트 (영어).
-    Imagen/DALL-E 모두 영어 프롬프트가 결과 품질이 가장 좋다."""
-    mood_en = {
-        "warm": "warm sunset golden hour atmosphere",
-        "bright": "bright daylight cheerful",
-        "cold": "cold winter blue tones",
-        "fresh": "fresh spring green nature",
-        "emotional": "moody emotional purple lavender",
-        "energetic": "energetic vibrant pink magenta",
-        "cozy": "cozy beige warm camel",
-        "calm": "calm soft pastel grey blue",
-        "dreamy": "dreamy ethereal twilight purple",
-        "playful": "playful pop colorful",
-        "modern": "modern minimal clean",
-    }.get((mood or "modern").lower(), "modern atmospheric")
+MOOD_EN = {
+    "warm": "warm sunset golden hour atmosphere",
+    "bright": "bright daylight cheerful",
+    "cold": "cold winter blue tones",
+    "fresh": "fresh spring green nature",
+    "emotional": "moody emotional purple lavender",
+    "energetic": "energetic vibrant pink magenta",
+    "cozy": "cozy beige warm camel",
+    "calm": "calm soft pastel grey blue",
+    "dreamy": "dreamy ethereal twilight purple",
+    "playful": "playful pop colorful",
+    "modern": "modern minimal clean",
+}
+
+# art_style → 스타일 cue (사용자 토글)
+ART_STYLES = {
+    "realistic": "photorealistic cinematic photograph, depth of field, professional photography",
+    "anime":     "anime illustration, soft cel-shaded, studio ghibli aesthetic, hand-painted background",
+}
+
+# 가사 등장 빈도 키워드 → 시각적 장면 단서 매핑 (LLM 폴백 용)
+SCENE_HINTS = [
+    ("저녁", "evening dusk window"),
+    ("밤",  "night cityscape stars"),
+    ("아침", "morning soft sunrise"),
+    ("비",  "rain drops on window"),
+    ("바다", "calm ocean horizon"),
+    ("강",  "river bridge reflection"),
+    ("커피", "coffee cup wooden table"),
+    ("골목", "narrow alley warm street lamps"),
+    ("기차", "empty train window blurred motion"),
+    ("창",  "window frame curtain light"),
+    ("꽃",  "wildflower meadow soft focus"),
+    ("길",  "winding empty road perspective"),
+    ("계절", "seasonal landscape"),
+    ("봄",  "spring blossom petals"),
+    ("여름", "summer sunlit leaves"),
+    ("가을", "autumn falling leaves amber"),
+    ("겨울", "winter snow soft pale"),
+]
+
+
+def _scene_from_lyrics(lyrics: str) -> str:
+    """가사에서 시각 단서 키워드 추출 (LLM 없이 빠른 룰 기반).
+    LLM 호출은 호출자가 옵션으로 따로 한다."""
+    if not lyrics:
+        return ""
+    found: list[str] = []
+    for ko, en in SCENE_HINTS:
+        if ko in lyrics and en not in found:
+            found.append(en)
+        if len(found) >= 3:
+            break
+    return ", ".join(found)
+
+
+async def _scene_from_lyrics_llm(db: Session, lyrics: str) -> str:
+    """Gemini로 가사 → 영문 시각 단서 1줄. 실패 시 빈 문자열.
+    가사가 길면 앞 600자만 사용."""
+    if not lyrics:
+        return ""
+    snippet = lyrics.strip()[:600]
+    payload = {
+        "model": "gemini-2.5-flash",
+        "system": (
+            "You read Korean (or English) song lyrics and output ONE short English line "
+            "(<= 20 words) describing a visual SCENE that fits the mood. "
+            "Strict rule: NEVER include people, humans, faces, hands, silhouettes, "
+            "or anything anthropomorphic. Only landscapes, objects, weather, light, places. "
+            "Output only the line, no explanation, no quotes."
+        ),
+        "user": f"Lyrics:\n{snippet}\n\nOne-line scene:",
+        "max_tokens": 80,
+        "temperature": 0.7,
+    }
+    try:
+        result = await call_api(db, provider="gemini", operation="generateContent",
+                                payload=payload, requester="video_editor", timeout=20.0)
+    except Exception:
+        return ""
+    if not result.get("ok"):
+        return ""
+    data = result.get("data") or {}
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return ""
+    parts = ((candidates[0] or {}).get("content") or {}).get("parts") or []
+    for p in parts:
+        if isinstance(p, dict) and p.get("text"):
+            line = (p["text"] or "").strip().strip('"').strip()
+            # 한 줄만
+            return line.split("\n")[0][:240]
+    return ""
+
+
+def _build_prompt(title: str, mood: str, issue: str, style: str = "",
+                  art_style: str = "realistic", scene_hint: str = "") -> str:
+    """곡 정보 → 이미지 프롬프트 (영어). 16:9 가로, 사람 제외.
+
+    Imagen/DALL-E 모두 영어 프롬프트가 결과 품질이 가장 좋다.
+    """
+    mood_en = MOOD_EN.get((mood or "modern").lower(), "modern atmospheric")
+    art_cue = ART_STYLES.get((art_style or "realistic").lower(),
+                              ART_STYLES["realistic"])
 
     parts = [
-        f"Vertical 9:16 album cover art for a song titled \"{title}\"" if title else "Vertical 9:16 album cover art",
+        f"Horizontal 16:9 cinematic landscape image inspired by a song titled \"{title}\""
+            if title else "Horizontal 16:9 cinematic landscape image",
+        f"scene: {scene_hint}" if scene_hint else "",
         f"theme: {issue}" if issue else "",
         f"style cue: {style}" if style else "",
         f"visual mood: {mood_en}",
+        f"art style: {art_cue}",
+        # 강력한 사람 배제 가드레일 — 모든 provider negative prompt 대용
+        "STRICT: no people, no humans, no faces, no figures, no silhouettes, no hands, no body parts, no portraits",
         "no text, no logo, no watermark, no captions",
-        "cinematic lighting, painterly, magazine cover quality",
+        "cinematic lighting, magazine cover quality, wide composition",
     ]
     prompt = ". ".join(p for p in parts if p)
-    return prompt[:1000]
+    return prompt[:1200]
 
 
 def _registered_providers(db: Session) -> list[str]:
@@ -116,14 +209,14 @@ async def _gen_openai(db: Session, job_id: int, prompt: str,
     out_path = out_dir / f"{proposal_id}.png"
     result = await call_api(
         db, provider="openai_image", operation="generate",
-        payload={"prompt": prompt, "size": "1024x1536", "model": "gpt-image-1"},
+        payload={"prompt": prompt, "size": "1536x1024", "model": "gpt-image-1"},
         requester="video_editor", timeout=120.0,
     )
     if not result.get("ok"):
-        # gpt-image-1 미지원 계정이면 dall-e-3로 폴백
+        # gpt-image-1 미지원 계정이면 dall-e-3로 폴백 (가로 1792x1024)
         result = await call_api(
             db, provider="openai_image", operation="generate",
-            payload={"prompt": prompt, "size": "1024x1792", "model": "dall-e-3",
+            payload={"prompt": prompt, "size": "1792x1024", "model": "dall-e-3",
                      "response_format": "b64_json"},
             requester="video_editor", timeout=120.0,
         )
@@ -160,7 +253,7 @@ async def _gen_gemini(db: Session, job_id: int, prompt: str,
     out_path = out_dir / f"{proposal_id}.png"
     result = await call_api(
         db, provider="gemini_image", operation="generate",
-        payload={"prompt": prompt, "aspect_ratio": "9:16",
+        payload={"prompt": prompt, "aspect_ratio": "16:9",
                  "model": "imagen-3.0-generate-002"},
         requester="video_editor", timeout=120.0,
     )
@@ -194,7 +287,8 @@ async def _gen_stability(db: Session, job_id: int, prompt: str,
     out_path = out_dir / f"{proposal_id}.png"
     result = await call_api(
         db, provider="stability", operation="generate",
-        payload={"prompt": prompt, "aspect_ratio": "9:16", "model": "core"},
+        payload={"prompt": prompt, "aspect_ratio": "16:9", "model": "core",
+                 "negative_prompt": "people, person, human, face, figure, silhouette, hands, body, portrait, text, watermark"},
         requester="video_editor", timeout=120.0,
     )
     if not result.get("ok"):
@@ -237,8 +331,14 @@ def _gen_pil(job_id: int, title: str, mood: str, issue: str,
 
 async def generate_proposals(db: Session, job_id: int, title: str,
                              mood: str, issue: str, style: str = "",
-                             include_pil: bool = True) -> list[ImageProposal]:
+                             include_pil: bool = True,
+                             lyrics: str = "",
+                             art_style: str = "realistic",
+                             use_lyrics_llm: bool = True) -> list[ImageProposal]:
     """등록된 모든 이미지 API + PIL 폴백으로 시안 1장씩 생성.
+
+    art_style: "realistic" (실사) | "anime" (애니메이션). 사람은 무조건 제외.
+    lyrics: 가사가 있으면 시각 단서를 추출해서 프롬프트에 반영 (Gemini → 룰 폴백).
 
     동시 호출. 각 provider는 키가 등록되어 있을 때만 시도된다.
     PIL 폴백은 항상 1장 추가 (키 전부 실패해도 시안은 보장).
@@ -246,7 +346,16 @@ async def generate_proposals(db: Session, job_id: int, title: str,
     out_dir = _vm.WORK_DIR / f"job_{job_id}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt = _build_prompt(title=title, mood=mood, issue=issue, style=style)
+    # 가사 → 시각 단서 (LLM 우선, 실패 시 룰 폴백)
+    scene_hint = ""
+    if lyrics:
+        if use_lyrics_llm:
+            scene_hint = await _scene_from_lyrics_llm(db, lyrics)
+        if not scene_hint:
+            scene_hint = _scene_from_lyrics(lyrics)
+
+    prompt = _build_prompt(title=title, mood=mood, issue=issue, style=style,
+                           art_style=art_style, scene_hint=scene_hint)
     ts = int(time.time() * 1000) % 1_000_000_000
 
     providers = _registered_providers(db)

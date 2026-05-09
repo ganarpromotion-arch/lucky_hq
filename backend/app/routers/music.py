@@ -95,7 +95,8 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
         agent_slug="music_producer",
         status="pending",
         input={
-            "lyrics_len": len(req.lyrics), "style": req.style, "title": req.title,
+            "lyrics": req.lyrics, "lyrics_len": len(req.lyrics),
+            "style": req.style, "title": req.title,
             "model": req.model, "n": req.n, "max_duration_sec": req.max_duration_sec,
         },
     )
@@ -391,10 +392,19 @@ def make_videos_from_archive(req: MakeVideosRequest, bg: BackgroundTasks,
 
 
 # ── 영상 표지 이미지 시안 (등록된 모든 이미지 API + PIL 폴백) ──
+class ImageProposalsRequest(BaseModel):
+    art_style: str = Field(default="realistic", pattern="^(realistic|anime)$")
+
+
 @router.post("/archive/image-proposals/{job_id}")
-async def image_proposals(job_id: int, db: Session = Depends(get_db)):
+async def image_proposals(job_id: int, req: ImageProposalsRequest | None = None,
+                          db: Session = Depends(get_db)):
     """곡 1개 → 등록된 모든 이미지 API + PIL 폴백으로 시안 N장 생성.
-    사용자는 시안 중 하나를 골라 영상 인코딩에 사용한다."""
+    사용자는 시안 중 하나를 골라 영상 인코딩에 사용한다.
+
+    art_style: "realistic" (실사) | "anime" (애니메이션). 사람은 항상 제외.
+    가사는 job.input.lyrics에서 읽어서 AI가 시각 단서로 활용.
+    """
     from .. import image_generator
 
     job = db.get(Job, job_id)
@@ -407,10 +417,12 @@ async def image_proposals(job_id: int, db: Session = Depends(get_db)):
     mood = (job.input or {}).get("mood", "modern") or "modern"
     issue = (job.input or {}).get("issue", "")
     style = (job.input or {}).get("style", "")
+    lyrics = (job.input or {}).get("lyrics", "")
+    art_style = (req.art_style if req else "realistic")
 
     proposals = await image_generator.generate_proposals(
         db, job_id=job_id, title=title, mood=mood, issue=issue, style=style,
-        include_pil=True,
+        include_pil=True, lyrics=lyrics, art_style=art_style,
     )
 
     db.add(AuditLog(
@@ -522,6 +534,55 @@ async def curator_options(db: Session = Depends(get_db)):
     Gemini로 오늘 트렌드/계절 반영. 실패 시 폴백."""
     from ..curator import propose_options
     return await propose_options(db)
+
+
+# ── 큐레이터 기본 컨셉 (구조화 폼) ─────────────────────
+class CuratorConceptUpsert(BaseModel):
+    keywords: list[str] = Field(default_factory=list)
+    ai_keywords: list[str] = Field(default_factory=list)
+    gender: str = Field(default="", max_length=24)
+    venue: str = Field(default="", max_length=120)
+    time_of_day: str = Field(default="", max_length=120)
+
+
+@router.get("/curator/concept")
+def get_curator_concept(db: Session = Depends(get_db)):
+    """부서 기본 컨셉 조회 (단일 레코드)."""
+    from ..curator import load_concept
+    return load_concept(db)
+
+
+@router.put("/curator/concept")
+def put_curator_concept(body: CuratorConceptUpsert, db: Session = Depends(get_db)):
+    """부서 기본 컨셉 저장 (전체 덮어쓰기)."""
+    from ..curator import save_concept
+    out = save_concept(
+        db,
+        keywords=body.keywords,
+        ai_keywords=body.ai_keywords,
+        gender=body.gender,
+        venue=body.venue,
+        time_of_day=body.time_of_day,
+    )
+    db.add(AuditLog(actor="owner", action="curator.concept.update",
+                    target="concept",
+                    detail={"keywords": out["keywords"], "gender": out["gender"]}))
+    db.commit()
+    return out
+
+
+class KeywordSuggestRequest(BaseModel):
+    hint: str = Field(default="", max_length=400)
+    existing: list[str] = Field(default_factory=list)
+
+
+@router.post("/curator/concept/suggest-keywords")
+async def suggest_concept_keywords(body: KeywordSuggestRequest,
+                                   db: Session = Depends(get_db)):
+    """AI가 기본 컨셉 키워드 후보 8개 제안 (Gemini)."""
+    from ..curator import suggest_keywords
+    keywords = await suggest_keywords(db, hint=body.hint, existing=body.existing)
+    return {"keywords": keywords}
 
 
 # ── 큐레이터 교육 (lesson) ───────────────────────────────

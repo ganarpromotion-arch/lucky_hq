@@ -163,6 +163,7 @@ async def _process_one(db: Session, batch: Batch, issue: str, idx: int) -> None:
             "issue": issue,
             "title": plan["title"],
             "style": plan["style"],
+            "lyrics": plan["lyrics"],
             "lyrics_len": len(plan["lyrics"]),
             "mood": plan.get("mood"),
             "source": plan.get("source"),

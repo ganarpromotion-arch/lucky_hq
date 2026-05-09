@@ -5,7 +5,7 @@
 
 흐름:
   1. Mureka audio_url 다운로드 (mp3 또는 wav)
-  2. 무드/제목 기반 정지 이미지 생성 (1080x1920 쇼츠 비율)
+  2. 무드/제목 기반 정지 이미지 생성 (1920x1080 가로 16:9)
   3. ffmpeg로 이미지 + 오디오 → mp4 인코딩
 
 스타일:
@@ -35,8 +35,8 @@ WORK_DIR.mkdir(parents=True, exist_ok=True)
 APP_DIR = Path(__file__).resolve().parent
 BUNDLED_FONT = APP_DIR / "assets" / "fonts" / "NotoSansKR-Bold.otf"
 
-# 쇼츠 해상도
-W, H = 1080, 1920
+# 가로 16:9 해상도 (유튜브/X 일반)
+W, H = 1920, 1080
 
 # 무드별 색상 팔레트 — 더 풍부한 3색 그라데이션 (위 / 중간 / 아래)
 MOOD_PALETTES: dict[str, tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]] = {
@@ -209,24 +209,24 @@ def make_thumbnail(out_path: Path, title: str, mood: str = "modern",
     draw = ImageDraw.Draw(img)
 
     # 3) 가운데 어두운 박스 (텍스트 가독성)
-    box_h = 760
-    box_top = (H - box_h) // 2 + 80
+    box_h = 520
+    box_top = (H - box_h) // 2 + 30
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
-    od.rectangle([(60, box_top), (W - 60, box_top + box_h)],
+    od.rectangle([(120, box_top), (W - 120, box_top + box_h)],
                  fill=(0, 0, 0, 110))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
 
     # 4) 제목 (큰 폰트)
-    title_font = _load_font(108)
-    margin = 130
+    title_font = _load_font(120)
+    margin = 200
     max_title_width = W - margin * 2
-    title_lines = _wrap_text(title or "Lucky HQ", draw, title_font, max_title_width)[:3]
+    title_lines = _wrap_text(title or "Lucky HQ", draw, title_font, max_title_width)[:2]
 
-    line_h = 130
+    line_h = 144
     total_h = len(title_lines) * line_h
-    start_y = box_top + (box_h - total_h) // 2 - 60
+    start_y = box_top + (box_h - total_h) // 2 - 40
     for i, line in enumerate(title_lines):
         bbox = draw.textbbox((0, 0), line, font=title_font)
         line_w = bbox[2] - bbox[0]
@@ -238,9 +238,9 @@ def make_thumbnail(out_path: Path, title: str, mood: str = "modern",
 
     # 5) 서브타이틀
     if subtitle:
-        sub_font = _load_font(46)
+        sub_font = _load_font(50)
         sub_lines = _wrap_text(subtitle, draw, sub_font, max_title_width)[:2]
-        sub_y = start_y + total_h + 60
+        sub_y = start_y + total_h + 50
         for i, line in enumerate(sub_lines):
             bbox = draw.textbbox((0, 0), line, font=sub_font)
             line_w = bbox[2] - bbox[0]
@@ -251,10 +251,10 @@ def make_thumbnail(out_path: Path, title: str, mood: str = "modern",
                       fill=(255, 255, 255, 220))
 
     # 6) 워터마크 (상단)
-    wm_font = _load_font(42)
+    wm_font = _load_font(44)
     bbox = draw.textbbox((0, 0), watermark, font=wm_font)
     wm_w = bbox[2] - bbox[0]
-    draw.text(((W - wm_w) // 2, 90), watermark, font=wm_font,
+    draw.text(((W - wm_w) // 2, 60), watermark, font=wm_font,
               fill=(255, 255, 255, 230))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

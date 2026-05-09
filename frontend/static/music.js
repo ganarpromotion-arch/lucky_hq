@@ -264,10 +264,13 @@ const PROVIDER_LABEL = {
   pil: '🍀 본부 폴백',
 };
 
+// 영상 표지 art style: realistic | anime
+let imageArtStyle = 'realistic';
+
 async function fetchProposals(jobId) {
   return await fetchJSON(`/api/music/archive/image-proposals/${jobId}`, {
     method: 'POST',
-    body: JSON.stringify({}),
+    body: JSON.stringify({ art_style: imageArtStyle }),
   });
 }
 
@@ -306,7 +309,7 @@ function renderThumbPreviews() {
         <div class="thumb-card ${picked}" data-pick-job="${jid}" data-pick-id="${pr.proposal_id}"
              style="cursor:pointer; background:var(--surface); border-radius:var(--r-sm); overflow:hidden;
                     border:3px solid ${picked ? 'var(--accent, #2563eb)' : 'transparent'}; transition:border-color .15s;">
-          <div style="aspect-ratio:9/16; background:#000;">
+          <div style="aspect-ratio:16/9; background:#000;">
             <img src="${pr.image_url}" alt="${pr.proposal_id}" style="width:100%; height:100%; object-fit:cover; display:block;">
           </div>
           <div style="padding:6px 8px; display:flex; gap:6px; justify-content:space-between; align-items:center;">
@@ -557,6 +560,113 @@ function onArchivePickNone() {
   document.querySelectorAll('[data-archive-pick]').forEach(cb => { cb.checked = false; });
   archivePicked.clear();
   refreshArchivePickCount();
+}
+
+// ─────────────────────────────────────────────────
+// 큐레이터 기본 컨셉 (구조화 폼)
+// ─────────────────────────────────────────────────
+function _splitKeywords(s) {
+  return (s || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+
+function _renderAiKeywordPills(arr) {
+  const wrap = $('#ai-keywords');
+  if (!wrap) return;
+  if (!arr.length) {
+    wrap.innerHTML = '<span class="hint">아직 추천 없음 — [AI 추천 받기]를 눌러 후보를 받아보세요.</span>';
+    return;
+  }
+  wrap.innerHTML = arr.map(k => `
+    <span class="curator-pill" data-ai-kw="${k.replace(/"/g, '&quot;')}"
+          style="cursor:pointer; padding:4px 10px; border:1px solid var(--border, #ccc); border-radius:999px; font-size:12px; user-select:none;">
+      ＋ ${k}
+    </span>
+  `).join('');
+  document.querySelectorAll('[data-ai-kw]').forEach(el => {
+    el.addEventListener('click', () => {
+      const kw = el.dataset.aiKw;
+      const inp = $('#concept-keywords');
+      if (!inp) return;
+      const current = _splitKeywords(inp.value);
+      if (!current.includes(kw)) {
+        current.push(kw);
+        inp.value = current.join(', ');
+      }
+    });
+  });
+}
+
+async function loadConcept() {
+  try {
+    const c = await fetchJSON('/api/music/curator/concept');
+    const inp = $('#concept-keywords'); if (inp) inp.value = (c.keywords || []).join(', ');
+    const g = $('#concept-gender'); if (g) g.value = c.gender || '';
+    const v = $('#concept-venue'); if (v) v.value = c.venue || '';
+    const t = $('#concept-time'); if (t) t.value = c.time_of_day || '';
+    _renderAiKeywordPills(c.ai_keywords || []);
+    const at = $('#concept-saved-at');
+    if (at && c.updated_at) at.textContent = `저장됨 · ${c.updated_at.replace('T', ' ').slice(0, 16)}`;
+  } catch (e) {
+    // 조용히 무시 (첫 진입)
+  }
+}
+
+async function onSuggestKeywords() {
+  const btn = $('#btn-suggest-keywords');
+  if (btn) { btn.disabled = true; btn.textContent = '🤖 AI 작성 중…'; }
+  try {
+    const existing = _splitKeywords($('#concept-keywords').value);
+    const hint = [
+      $('#concept-gender').value, $('#concept-venue').value, $('#concept-time').value,
+    ].filter(Boolean).join(' / ');
+    const r = await fetchJSON('/api/music/curator/concept/suggest-keywords', {
+      method: 'POST',
+      body: JSON.stringify({ hint, existing }),
+    });
+    _renderAiKeywordPills(r.keywords || []);
+    $('#suggest-hint').textContent = (r.keywords && r.keywords.length)
+      ? '클릭해서 핵심 키워드에 추가하세요'
+      : '추천 결과 없음';
+  } catch (e) {
+    showToast('AI 추천 실패: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🤖 AI 추천 받기'; }
+  }
+}
+
+async function onSaveConcept() {
+  const body = {
+    keywords: _splitKeywords($('#concept-keywords').value),
+    ai_keywords: [...document.querySelectorAll('[data-ai-kw]')].map(el => el.dataset.aiKw),
+    gender: $('#concept-gender').value,
+    venue: $('#concept-venue').value,
+    time_of_day: $('#concept-time').value,
+  };
+  try {
+    const r = await fetchJSON('/api/music/curator/concept', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    showToast('기본 컨셉 저장됨');
+    const at = $('#concept-saved-at');
+    if (at && r.updated_at) at.textContent = `저장됨 · ${r.updated_at.replace('T', ' ').slice(0, 16)}`;
+  } catch (e) {
+    showToast('저장 실패: ' + e.message);
+  }
+}
+
+// 영상 표지 art style 토글 (실사 / 애니)
+function _refreshStyleButtons() {
+  document.querySelectorAll('[data-style]').forEach(btn => {
+    const active = btn.dataset.style === imageArtStyle;
+    btn.style.background = active ? 'var(--accent, #2563eb)' : '';
+    btn.style.color = active ? '#fff' : '';
+  });
+}
+
+function onPickStyle(s) {
+  imageArtStyle = (s === 'anime') ? 'anime' : 'realistic';
+  _refreshStyleButtons();
 }
 
 // ─────────────────────────────────────────────────
@@ -969,11 +1079,22 @@ async function onGenerate() {
   const lessonTxt = $('#lesson-text');
   if (lessonTxt) lessonTxt.addEventListener('keydown', e => { if (e.key === 'Enter') onAddLesson(); });
 
+  // 큐레이터 기본 컨셉
+  const btnConceptSave = $('#btn-concept-save'); if (btnConceptSave) btnConceptSave.addEventListener('click', onSaveConcept);
+  const btnSuggestKw = $('#btn-suggest-keywords'); if (btnSuggestKw) btnSuggestKw.addEventListener('click', onSuggestKeywords);
+
+  // 영상 표지 art style 토글
+  document.querySelectorAll('[data-style]').forEach(btn => {
+    btn.addEventListener('click', () => onPickStyle(btn.dataset.style));
+  });
+  _refreshStyleButtons();
+
   loadAgents();
   loadSettings();
   loadLatestBatch();
   loadArchive();
   loadLessons();
+  loadConcept();
   loadDailyStatus();
   refreshJobs();
   setInterval(loadAgents, 8000);

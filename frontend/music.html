@@ -56,9 +56,13 @@
       <!-- 시안 선택 패널: 등록된 이미지 API들이 곡당 시안 N장 → 곡마다 1장 선택 → 영상 -->
       <div id="thumb-preview-panel" style="display:none; margin-top:18px; padding:16px; background:var(--surface-soft); border-radius:var(--r-md);">
         <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <strong>🖼 표지 시안 선택</strong>
-          <span class="hint">등록된 이미지 API로 만든 시안. 곡마다 1장씩 골라 [영상 만들기]</span>
-          <span style="margin-left:auto; display:flex; gap:8px;">
+          <strong>🖼 표지 시안 선택 <span class="hint">(가로 16:9, 사람 제외)</span></strong>
+          <span class="hint">가사를 AI가 읽어 장면 단서를 만든 시안입니다.</span>
+          <span style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+            <span style="display:flex; gap:0; border:1px solid var(--border, #ccc); border-radius:var(--r-sm); overflow:hidden;">
+              <button id="btn-style-realistic" class="btn btn-sm" type="button" data-style="realistic" style="border-radius:0; border:0;">📷 실사</button>
+              <button id="btn-style-anime" class="btn btn-sm" type="button" data-style="anime" style="border-radius:0; border:0;">🎨 애니</button>
+            </span>
             <button id="btn-thumb-cancel" class="btn btn-sm" type="button">취소</button>
             <button id="btn-thumb-reroll-all" class="btn btn-sm" type="button">↻ 다시 뽑기</button>
             <button id="btn-thumb-encode" class="btn btn-primary btn-sm" type="button" disabled>🎬 선택한 시안으로 영상 만들기</button>
@@ -120,6 +124,54 @@
     </div>
     <div class="card-body">
       <div id="daily-status" class="empty">상태 확인 중…</div>
+    </div>
+  </section>
+
+  <!-- 큐레이터 기본 컨셉 (구조화 폼) -->
+  <section class="card">
+    <div class="card-head">
+      <h2>🧭 큐레이터 기본 컨셉</h2>
+      <p class="desc">부서 전체에 적용되는 기본 컨셉입니다. 5x3 안 / 일일 발송 / 작곡가 모두 이 컨셉을 우선 반영합니다.</p>
+    </div>
+    <div class="card-body">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+        <label class="field" style="grid-column:1/-1;">
+          <span>핵심 키워드 <span class="hint">(쉼표로 구분, 직접 작성)</span></span>
+          <input id="concept-keywords" class="input" type="text" maxlength="400"
+                 placeholder="예: 진솔정, 곱창전골, 40대 직장인, 따뜻한 위로">
+        </label>
+        <div class="field" style="grid-column:1/-1;">
+          <span>AI 추천 키워드 <span class="hint">(클릭 → 핵심 키워드에 추가)</span></span>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+            <button id="btn-suggest-keywords" class="btn btn-sm" type="button">🤖 AI 추천 받기</button>
+            <span class="hint" id="suggest-hint"></span>
+          </div>
+          <div id="ai-keywords" class="curator-pills" style="margin-top:8px;"></div>
+        </div>
+        <label class="field">
+          <span>보컬/타깃 성별</span>
+          <select id="concept-gender" class="input">
+            <option value="">(선택 안 함)</option>
+            <option value="남성">남성</option>
+            <option value="여성">여성</option>
+            <option value="혼성">혼성</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>어디서 듣는 음악</span>
+          <input id="concept-venue" class="input" type="text" maxlength="120"
+                 placeholder="예: 카페, 진솔정 매장, 출퇴근 차 안">
+        </label>
+        <label class="field" style="grid-column:1/-1;">
+          <span>언제 듣는 음악</span>
+          <input id="concept-time" class="input" type="text" maxlength="120"
+                 placeholder="예: 아침 출근길, 저녁 식사 시간, 주말 늦은 오후">
+        </label>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:14px;">
+        <button id="btn-concept-save" class="btn btn-primary btn-sm" type="button">💾 저장</button>
+        <span class="hint" id="concept-saved-at"></span>
+      </div>
     </div>
   </section>
 
