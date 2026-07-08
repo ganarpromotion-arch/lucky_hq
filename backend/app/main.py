@@ -17,13 +17,14 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import Base, engine, SessionLocal
 from .config import get_settings
 from .routers import console as console_router
 from .routers import music as music_router
+from .routers import longform as longform_router
 from .routers import settings as settings_router
 from .routers import batch as batch_router
 from .routers import telegram as telegram_router
@@ -105,6 +106,7 @@ app = FastAPI(title="Lucky HQ", version="1.0.0", lifespan=lifespan)
 # API
 app.include_router(console_router.router)
 app.include_router(music_router.router)
+app.include_router(longform_router.router)
 app.include_router(settings_router.router)
 app.include_router(batch_router.router)
 app.include_router(telegram_router.router)
@@ -132,6 +134,9 @@ def page_root():
 
 @app.get("/dept/{slug}")
 def page_department(slug: str):
+    # 음악 부서는 이제 루트(스튜디오)로 통합됨 — 옛 링크 호환용 리다이렉트
+    if slug == "music":
+        return RedirectResponse(url="/", status_code=307)
     target = FRONTEND_DIR / f"{slug}.html"
     if target.exists():
         return FileResponse(target)

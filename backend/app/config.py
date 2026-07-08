@@ -14,8 +14,6 @@ class Settings(BaseSettings):
     app_name: str = "Lucky HQ"
     app_env: str = "development"
     timezone: str = "Asia/Seoul"
-    timezone: str = "Asia/Seoul"
-    timezone: str = "Asia/Seoul"
 
     # DB
     database_url: str = "sqlite:///./lucky_hq.db"
@@ -54,6 +52,10 @@ class Settings(BaseSettings):
     telegram_owner_chat_id: str = ""
     telegram_webhook_secret: str = ""
     telegram_api_base: str = "https://api.telegram.org"
+
+    # 채널 브랜딩 — 커버 워터마크 + 영어 설명 서명에 사용 (DB Setting으로 덮어쓰기 가능)
+    channel_name: str = "Healing Waves"
+    channel_handle: str = "@HealingWaves00"
 
     # YouTube 업로드 정책 (구현 예정)
     # IMPORTANT: 영상 설명(description)은 영어로만 작성한다.

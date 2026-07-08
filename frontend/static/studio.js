@@ -1,0 +1,287 @@
+/* Lucky Studio — 수면·앰비언트 롱폼
+   주제 → 원본 곡(Mureka) → 자동보관 → 1시간 루프 영상 + 영어 메타데이터.
+   백엔드 계약:
+     POST /api/music/compose-plan   {issue} → {title,lyrics,style,mood,keyword,source}
+     POST /api/music/generate       {issue,mood,keyword,title,style,lyrics} → job
+     GET  /api/music/jobs/{id}       → job (running이면 Mureka 폴링)
+     POST /api/music/archive/{id}    → 보관(다운로드)
+     POST /api/music/longform        {job_id,target_min,niche} → release
+     GET  /api/music/longform/{id}   → release 상태
+     GET  /api/music/longform        → release 목록 (갤러리)
+     GET  /api/music/curator/options → {moods,keywords}
+*/
+
+const el = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    ...opts,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const m = (data && (data.detail || data.error)) || `HTTP ${r.status}`;
+    throw new Error(typeof m === 'string' ? m : JSON.stringify(m));
+  }
+  return data;
+}
+function hint(id, msg, kind = '') {
+  const h = el(id); if (!h) return;
+  h.textContent = msg || ''; h.className = 'hint' + (kind ? ' ' + kind : '');
+}
+function spinnerRow(t) { return `<div class="spin-row"><span class="spinner"></span><span>${t}</span></div>`; }
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ── 상태 ── */
+const state = { niche: 'sleep', targetMin: 60, job: null, selected: new Set() };
+const ORDER = ['theme', 'plan', 'song', 'longform'];
+function setStep(step) {
+  const idx = ORDER.indexOf(step);
+  document.querySelectorAll('#steps li').forEach((li) => {
+    const i = ORDER.indexOf(li.dataset.step);
+    li.classList.toggle('on', i === idx);
+    li.classList.toggle('done', i < idx);
+  });
+}
+const unlock = (id) => el(id).classList.remove('is-locked');
+
+/* ── 세그먼트 버튼 (니치 / 길이) ── */
+function bindSeg(segId, attr, onPick) {
+  const seg = el(segId);
+  seg.querySelectorAll('.seg-btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      seg.querySelectorAll('.seg-btn').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      onPick(b.dataset[attr]);
+    });
+  });
+}
+
+/* ── 서버 상태 ── */
+async function checkHealth() {
+  try { await api('/api/health'); el('health-ind').textContent = '● 연결됨'; el('health-ind').className = 'ind ok'; }
+  catch { el('health-ind').textContent = '● 연결 끊김'; el('health-ind').className = 'ind bad'; }
+}
+
+/* ── ① 추천 ── */
+async function loadSuggestions() {
+  const box = el('suggest-box'); box.classList.remove('hidden');
+  box.innerHTML = '<div class="empty">추천 불러오는 중…</div>';
+  try {
+    const o = await api('/api/music/curator/options');
+    const chips = (arr, cls) => (arr || []).map(
+      (v) => `<button class="chip ${cls}" data-v="${encodeURIComponent(v)}">${esc(v)}</button>`).join('');
+    box.innerHTML = `
+      <div class="suggest-row"><span class="suggest-label">분위기</span>${chips(o.moods, 'mood')}</div>
+      <div class="suggest-row"><span class="suggest-label">키워드</span>${chips(o.keywords, 'kw')}</div>
+      <div class="suggest-note">칩을 누르면 주제 칸에 채워집니다.</div>`;
+    box.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => {
+      const v = decodeURIComponent(c.dataset.v);
+      const t = el('theme'); t.value = (t.value ? t.value.trim() + ' · ' : '') + v; t.focus();
+    }));
+  } catch (e) { box.innerHTML = `<div class="empty">추천 실패: ${esc(e.message)}</div>`; }
+}
+
+/* ── ② 기획안 ── */
+async function makePlan() {
+  const issue = el('theme').value.trim();
+  if (!issue) { hint('theme-hint', '주제를 먼저 입력하세요', 'fail'); return; }
+  const btn = el('btn-plan'); btn.disabled = true; hint('theme-hint', '기획안 만드는 중…');
+  try {
+    const p = await api('/api/music/compose-plan', { method: 'POST', body: JSON.stringify({ issue }) });
+    el('p-title').value = p.title || '';
+    // 앰비언트 니치 → 스타일을 무가사 앰비언트 쪽으로 보정
+    const ambient = 'ambient, soft pads, slow tempo, calm, no vocals';
+    el('p-style').value = p.style && /ambient|instrumental|calm|lofi/i.test(p.style) ? p.style : ambient;
+    el('p-mood').value = p.mood || '';
+    el('p-keyword').value = p.keyword || '';
+    el('p-lyrics').value = el('p-instrumental').checked ? '' : (p.lyrics || '');
+    const src = el('plan-src');
+    src.textContent = p.source === 'llm' ? 'AI 작성' : '규칙 기반';
+    src.className = 'src-badge ' + (p.source === 'llm' ? 'ok' : 'warn');
+    unlock('card-plan'); setStep('plan'); hint('theme-hint', '');
+    el('card-plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { hint('theme-hint', '실패: ' + e.message, 'fail'); }
+  finally { btn.disabled = false; }
+}
+
+/* ── ③ 곡 생성 + 폴링 + 자동 보관 ── */
+async function generateSong() {
+  const instrumental = el('p-instrumental').checked;
+  let style = el('p-style').value.trim() || 'ambient, calm';
+  let lyrics = el('p-lyrics').value.trim();
+  if (instrumental) {
+    lyrics = '[instrumental]';                       // 무가사 지시
+    if (!/instrumental|no vocals/i.test(style)) style += ', instrumental, no vocals';
+  } else if (!lyrics) {
+    hint('plan-hint', '가사가 비어 있습니다 (무가사면 위 체크박스를 켜세요)', 'fail'); return;
+  }
+  const payload = {
+    issue: el('theme').value.trim(),
+    title: el('p-title').value.trim(),
+    style, mood: el('p-mood').value.trim(), keyword: el('p-keyword').value.trim(), lyrics,
+  };
+
+  const btn = el('btn-generate'); btn.disabled = true; hint('plan-hint', '');
+  unlock('card-song'); setStep('song');
+  el('card-song').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const box = el('song-status'); box.innerHTML = spinnerRow('곡 생성 요청 중…');
+  try {
+    let job = await api('/api/music/generate', { method: 'POST', body: JSON.stringify(payload) });
+    state.job = { id: job.id, title: payload.title || `#${job.id}` };
+    if (job.status === 'failed') throw new Error(job.error || '생성 실패');
+
+    box.innerHTML = spinnerRow(`#${job.id} Mureka 작업 대기 중… (수 분)`);
+    const deadline = Date.now() + 4 * 60 * 1000;
+    while (job.status === 'running' || job.status === 'pending') {
+      if (Date.now() > deadline) throw new Error('시간 초과 — 나중에 보관함에서 확인하세요');
+      await sleep(5000);
+      job = await api(`/api/music/jobs/${job.id}`);
+      box.innerHTML = spinnerRow(`#${job.id} 생성 중… (${job.status})`);
+    }
+    if (job.status !== 'done') throw new Error(job.error || `상태: ${job.status}`);
+
+    box.innerHTML = spinnerRow('곡 완성 · 보관 중…');
+    await api(`/api/music/archive/${job.id}`, { method: 'POST' });
+    box.innerHTML = `<div class="ok-row">✅ 원본 곡 완성 (#${job.id})</div>`;
+    el('song-player').innerHTML = `<audio controls preload="none" src="/api/music/audio/${job.id}"></audio>`;
+
+    unlock('card-longform'); setStep('longform');
+    state.selected.add(job.id);              // 방금 만든 곡 자동 선택
+    await renderTrackList();
+    hint('longform-hint', '곡을 더 만들거나, 선택한 곡으로 롱폼을 렌더하세요', 'ok');
+    el('card-longform').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    box.innerHTML = `<div class="fail-row">✗ ${esc(e.message)}</div>`;
+    hint('plan-hint', '실패: ' + e.message, 'fail');
+  } finally { btn.disabled = false; refreshGallery(); }
+}
+
+/* ── ④ 완성 곡 목록 (컴필레이션 소스 선택) ── */
+async function renderTrackList() {
+  const wrap = el('track-list');
+  try {
+    const rows = await api('/api/music/archive');
+    if (!rows.length) { wrap.innerHTML = '<div class="empty">완성된 곡이 없습니다.</div>'; updateTrackCount(); return; }
+    unlock('card-longform');                 // 완성 곡이 있으면 컴필레이션 단계 열기
+    wrap.innerHTML = rows.map((r) => `
+      <label class="track ${state.selected.has(r.id) ? 'sel' : ''}">
+        <input type="checkbox" data-jid="${r.id}" ${state.selected.has(r.id) ? 'checked' : ''}>
+        <span class="track-title">${esc(r.title)}</span>
+        <span class="track-meta">${esc(r.mood || '')}</span>
+        <audio controls preload="none" src="${r.audio_url}"></audio>
+      </label>`).join('');
+    wrap.querySelectorAll('input[data-jid]').forEach((cb) => cb.addEventListener('change', () => {
+      const id = parseInt(cb.dataset.jid, 10);
+      if (cb.checked) state.selected.add(id); else state.selected.delete(id);
+      cb.closest('.track').classList.toggle('sel', cb.checked);
+      updateTrackCount();
+    }));
+  } catch (e) { wrap.innerHTML = `<div class="empty">곡 목록 로드 실패: ${esc(e.message)}</div>`; }
+  updateTrackCount();
+}
+function updateTrackCount() {
+  el('track-count').textContent = state.selected.size;
+  el('btn-longform').disabled = state.selected.size === 0;
+}
+
+/* ── 롱폼 렌더 + 폴링 ── */
+async function makeLongform() {
+  const ids = [...state.selected];
+  if (!ids.length) { hint('longform-hint', '곡을 하나 이상 선택하세요', 'fail'); return; }
+  const btn = el('btn-longform'); btn.disabled = true;
+  const box = el('longform-status'); box.classList.remove('hidden');
+  box.innerHTML = spinnerRow(`${ids.length}곡으로 렌더 대기열에 등록 중…`);
+  try {
+    let rel = await api('/api/music/longform', {
+      method: 'POST',
+      body: JSON.stringify({ job_ids: ids, target_min: state.targetMin, niche: state.niche }),
+    });
+    box.innerHTML = spinnerRow(`🌙 ${state.targetMin}분 영상 렌더 중… (보통 1~2분)`);
+    const deadline = Date.now() + 8 * 60 * 1000;
+    while (rel.status === 'pending' || rel.status === 'rendering') {
+      if (Date.now() > deadline) { box.innerHTML = spinnerRow('시간이 걸립니다 — 아래 보관함에서 갱신됩니다.'); break; }
+      await sleep(5000);
+      rel = await api(`/api/music/longform/${rel.id}`);
+    }
+    if (rel.status === 'done') {
+      box.innerHTML = `<div class="ok-row">✅ 영상 완성 · ${Math.round(rel.duration_sec/60)}분 · ${rel.size_mb}MB
+        <a class="btn btn-primary btn-sm" href="${rel.download_url}" download>⬇ mp4 다운로드</a></div>
+        <div class="muted-note">아래 보관함에서 영어 제목·설명·태그를 복사해 유튜브에 올리세요.</div>`;
+    } else if (rel.status === 'failed') {
+      throw new Error(rel.error || '렌더 실패');
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="fail-row">✗ ${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; refreshGallery(); }
+}
+
+/* ── 보관함 (롱폼 릴리스 + 메타데이터 복사) ── */
+async function refreshGallery() {
+  const g = el('gallery');
+  try {
+    const rows = await api('/api/music/longform');
+    if (!rows.length) { g.innerHTML = '<div class="empty">아직 완성된 영상이 없습니다.</div>'; return; }
+    g.innerHTML = rows.map((r) => {
+      const cover = r.cover_url ? `<img class="g-cover" src="${r.cover_url}" alt="cover" loading="lazy">` : '<div class="g-cover ph"></div>';
+      let action = '';
+      if (r.status === 'done') action = `<a class="btn btn-sm btn-primary" href="${r.download_url}" download>⬇ mp4 (${r.size_mb}MB)</a>`;
+      else if (r.status === 'failed') action = `<span class="v-fail">렌더 실패</span>`;
+      else action = `<span class="v-render">🌙 렌더 중…</span>`;
+      const meta = r.status === 'done' ? `
+        <details class="yt">
+          <summary>📋 유튜브 메타데이터 (영어)</summary>
+          <div class="yt-row"><span class="yt-k">제목</span>
+            <code id="ytt-${r.id}">${esc(r.yt_title)}</code>
+            <button class="btn btn-sm" data-copy="ytt-${r.id}">복사</button></div>
+          <div class="yt-row"><span class="yt-k">설명</span>
+            <pre id="ytd-${r.id}">${esc(r.yt_description)}</pre>
+            <button class="btn btn-sm" data-copy="ytd-${r.id}">복사</button></div>
+          <div class="yt-row"><span class="yt-k">태그</span>
+            <code id="ytg-${r.id}">${esc((r.yt_tags||[]).join(', '))}</code>
+            <button class="btn btn-sm" data-copy="ytg-${r.id}">복사</button></div>
+        </details>` : '';
+      return `
+        <div class="g-item lf">
+          ${cover}
+          <div class="g-main">
+            <div class="g-title">${esc(r.yt_title || r.theme || ('#'+r.id))}</div>
+            <div class="g-meta">${esc(r.niche)} · ${r.track_count||1}곡 · ${r.target_sec/60|0}분 목표 · ${esc(r.theme).slice(0,40)}</div>
+            ${meta}
+          </div>
+          <div class="g-actions">${action}</div>
+        </div>`;
+    }).join('');
+    g.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+      const src = el(b.dataset.copy); const text = src.textContent;
+      try { await navigator.clipboard.writeText(text); b.textContent = '복사됨 ✓'; setTimeout(() => b.textContent = '복사', 1500); }
+      catch { b.textContent = '실패'; }
+    }));
+  } catch (e) { g.innerHTML = `<div class="empty">보관함 로드 실패: ${esc(e.message)}</div>`; }
+}
+
+/* ── 바인딩 ── */
+bindSeg('niche-seg', 'niche', (v) => { state.niche = v; });
+bindSeg('len-seg', 'min', (v) => { state.targetMin = parseInt(v, 10); });
+el('p-instrumental').addEventListener('change', (e) => {
+  el('lyrics-field').style.opacity = e.target.checked ? '.5' : '1';
+});
+el('btn-suggest').addEventListener('click', loadSuggestions);
+el('btn-plan').addEventListener('click', makePlan);
+el('btn-generate').addEventListener('click', generateSong);
+el('btn-longform').addEventListener('click', makeLongform);
+el('btn-more').addEventListener('click', () => {
+  // 새 트랙 하나 더: 주제 단계로 올라가 입력만 비움 (선택 곡·니치는 유지)
+  el('p-title').value = ''; el('p-lyrics').value = '';
+  setStep('theme');
+  el('card-theme').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el('theme').focus();
+});
+
+checkHealth();
+renderTrackList();   // 기존 보관곡이 있으면 목록 표시
+refreshGallery();

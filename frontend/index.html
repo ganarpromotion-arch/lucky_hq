@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🍀 Lucky HQ — AI 운영본부</title>
+<title>🌙 Lucky Studio — 수면·앰비언트 롱폼 스튜디오</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -11,23 +11,143 @@
 
   <header class="topbar">
     <div class="brand">
-      <span class="clover">🍀</span>
-      <span>Lucky HQ</span>
+      <span class="clover">🌙</span>
+      <span>Lucky Studio</span>
     </div>
     <div class="meta">
-      <a href="/team" class="btn-ghost btn btn-sm">👥 팀</a>
-      <a href="/secrets" class="btn-ghost btn btn-sm">🔐 API 관리</a>
-      <span class="ind" id="health-ind">연결 확인 중</span>
+      <a href="/secrets" class="btn btn-ghost btn-sm">🔐 API 키</a>
+      <span class="ind" id="health-ind" title="서버 연결">연결 확인 중</span>
       <span class="clock" id="clock" title="한국시간 (KST)">--:--:--</span>
     </div>
   </header>
 
-  <section id="dept-section">
-    <div class="empty">부서 정보를 불러오는 중…</div>
+  <p class="tagline">주제 하나 → <b>앰비언트 음악</b> · <b>차분한 커버</b> · <b>1시간 유튜브 영상</b>. 수면·집중 니치로 수익 확실하게.</p>
+
+  <ol class="steps" id="steps">
+    <li data-step="theme"  class="on">주제</li>
+    <li data-step="plan">기획</li>
+    <li data-step="song">음악</li>
+    <li data-step="longform">1시간 영상</li>
+  </ol>
+
+  <!-- ① 주제 -->
+  <section class="card step-card" id="card-theme">
+    <div class="card-head">
+      <h2><span class="step-no">1</span> 주제 · 니치</h2>
+      <p class="desc">어떤 분위기의 앰비언트를 만들지 적으세요. 니치는 수익 구조를 결정합니다.</p>
+    </div>
+    <div class="card-body">
+      <div class="field">
+        <label>니치 (채널 정체성)</label>
+        <div class="seg" id="niche-seg">
+          <button class="seg-btn on" data-niche="sleep">🌙 수면·힐링 <span class="seg-sub">RPM 최상 $10+</span></button>
+          <button class="seg-btn" data-niche="study">📚 집중·스터디 <span class="seg-sub">$3~8</span></button>
+          <button class="seg-btn" data-niche="cinematic">🎬 시네마틱 <span class="seg-sub">$3~8</span></button>
+        </div>
+      </div>
+      <textarea id="theme" class="input" rows="3" placeholder="예: 비 내리는 깊은 밤, 마음이 가라앉는 잔잔한 앰비언트"></textarea>
+      <div class="row gap">
+        <button class="btn" id="btn-suggest">🗂 오늘의 추천 받기</button>
+        <button class="btn btn-primary" id="btn-plan">✍ 기획안 만들기 →</button>
+      </div>
+      <div id="suggest-box" class="suggest hidden"></div>
+      <div id="theme-hint" class="hint"></div>
+    </div>
+  </section>
+
+  <!-- ② 기획 -->
+  <section class="card step-card is-locked" id="card-plan">
+    <div class="card-head">
+      <h2><span class="step-no">2</span> 기획안 <span class="src-badge hidden" id="plan-src"></span></h2>
+      <p class="desc">앰비언트는 무가사가 기본입니다. 제목·스타일을 확인하고 곡을 만드세요.</p>
+    </div>
+    <div class="card-body">
+      <div class="field">
+        <label>제목</label>
+        <input id="p-title" class="input" placeholder="곡/영상 제목 (예: Rainy Midnight)">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>스타일 (Mureka 프롬프트)</label>
+          <input id="p-style" class="input" placeholder="ambient, soft pads, slow, no vocals">
+        </div>
+        <div class="field">
+          <label>분위기 · 키워드</label>
+          <div class="row gap">
+            <input id="p-mood" class="input" placeholder="mood">
+            <input id="p-keyword" class="input" placeholder="keyword">
+          </div>
+        </div>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="p-instrumental" checked>
+        무가사(instrumental) — 수면·집중엔 보컬 없이 (권장)
+      </label>
+      <div class="field" id="lyrics-field">
+        <label>가사 <span class="dim">(무가사면 비워도 됩니다)</span></label>
+        <textarea id="p-lyrics" class="input mono" rows="6" placeholder="무가사면 비워두세요"></textarea>
+      </div>
+      <div class="row gap">
+        <button class="btn btn-primary" id="btn-generate">🎵 이 기획안으로 곡 만들기 →</button>
+      </div>
+      <div id="plan-hint" class="hint"></div>
+    </div>
+  </section>
+
+  <!-- ③ 음악 -->
+  <section class="card step-card is-locked" id="card-song">
+    <div class="card-head">
+      <h2><span class="step-no">3</span> 원본 곡 생성</h2>
+      <p class="desc">Mureka가 앰비언트 원본(수 분)을 만드는 중입니다. 완료되면 자동 보관됩니다.</p>
+    </div>
+    <div class="card-body">
+      <div id="song-status" class="progress-box"></div>
+      <div id="song-player"></div>
+    </div>
+  </section>
+
+  <!-- ④ 컴필레이션 영상 -->
+  <section class="card step-card is-locked" id="card-longform">
+    <div class="card-head">
+      <h2><span class="step-no">4</span> 컴필레이션 영상 만들기</h2>
+      <p class="desc">여러 곡을 골라 크로스페이드로 이어붙이면 반복이 줄어 더 자연스럽습니다. 목표 길이에 모자라면 자동으로 루프해 채웁니다.</p>
+    </div>
+    <div class="card-body">
+      <div class="tracks-head">
+        <label>이 채널의 완성 곡 — <b id="track-count">0</b>곡 선택</label>
+        <button class="btn btn-sm" id="btn-more">➕ 곡 더 만들기</button>
+      </div>
+      <div id="track-list" class="track-list"><div class="empty">완성된 곡이 없습니다.</div></div>
+
+      <div class="field" style="margin-top:14px;">
+        <label>길이</label>
+        <div class="seg" id="len-seg">
+          <button class="seg-btn" data-min="30">30분</button>
+          <button class="seg-btn on" data-min="60">1시간</button>
+          <button class="seg-btn" data-min="120">2시간</button>
+        </div>
+      </div>
+      <div class="row gap">
+        <button class="btn btn-primary" id="btn-longform" disabled>🌙 선택 곡으로 롱폼 렌더</button>
+        <span id="longform-hint" class="hint"></span>
+      </div>
+      <div id="longform-status" class="progress-box hidden"></div>
+    </div>
+  </section>
+
+  <!-- 완성 보관함 -->
+  <section class="card" id="card-gallery">
+    <div class="card-head">
+      <h2>🎞 완성 보관함 (유튜브 업로드용)</h2>
+      <p class="desc">mp4를 내려받고, 아래 영어 제목·설명·태그를 유튜브에 그대로 붙여넣으세요.</p>
+    </div>
+    <div class="card-body">
+      <div id="gallery" class="gallery"><div class="empty">아직 완성된 영상이 없습니다.</div></div>
+    </div>
   </section>
 
 </main>
 <script src="/static/clock.js"></script>
-<script src="/static/console.js"></script>
+<script src="/static/studio.js"></script>
 </body>
 </html>

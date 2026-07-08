@@ -156,6 +156,35 @@ class Video(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class LongformRelease(Base):
+    """롱폼 수면·앰비언트 영상 1편 — 곡 1개를 목표 길이(기본 1시간)로 루프.
+
+    수익 구조상 가장 확실한 형태: 무가사 앰비언트를 길게 루프 → 높은 RPM(수면/웰니스),
+    낮은 정책 리스크(롱폼·단일 니치), 최저 제작비(Mureka 호출 1회).
+    영어 메타데이터(제목/설명/태그)를 함께 저장해 유튜브 업로드 시 그대로 복사한다.
+    """
+    __tablename__ = "longform_releases"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)  # 대표 곡(메타데이터용)
+    source_job_ids = Column(JSON, default=list)        # 컴필레이션 소스 곡들 (여러 곡을 이어붙임)
+    theme = Column(String(300), default="")            # 원본 주제(한국어 OK)
+    niche = Column(String(32), default="sleep")        # sleep | study | cinematic
+    target_sec = Column(Integer, default=3600)         # 목표 길이 (초)
+    status = Column(String(32), default="pending")     # pending | rendering | done | failed
+    cover_path = Column(String(512), default="")
+    video_path = Column(String(512), default="")
+    duration_sec = Column(Integer, default=0)
+    file_size = Column(Integer, default=0)
+    # 유튜브 업로드용 영어 메타데이터 (수동 업로드 시 복사)
+    yt_title = Column(String(300), default="")
+    yt_description = Column(Text, default="")
+    yt_tags = Column(JSON, default=list)
+    error = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class TelegramSubscriber(Base):
     """텔레그램으로 본부에 가입한 사용자.
 

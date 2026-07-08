@@ -28,6 +28,11 @@ class GenerateRequest(BaseModel):
     lyrics: str = Field(..., min_length=1, max_length=4000)
     style: str = Field(default="pop", max_length=200)
     title: str = Field(default="", max_length=200)
+    # 주제 일관성 — 썸네일/영상이 '주제에 맞게' 나오려면 곡의 주제·무드를 Job에 남겨야 한다.
+    # (썸네일 생성은 job.input 의 issue/mood/keyword 를 읽어 이미지 프롬프트를 만든다.)
+    issue: str = Field(default="", max_length=1000)          # 곡의 주제/이슈 (기획안의 원본 주제)
+    mood: str = Field(default="", max_length=100)            # 분위기 (기획안 mood)
+    keyword: str = Field(default="", max_length=100)         # 핵심 키워드 (기획안 keyword)
     # Mureka 옵션 — 비우면 settings 기본값 사용
     model: str = Field(default="", max_length=64)            # "auto" | "mureka-7.5" | "mureka-v8" | "mureka-v9"
     n: int = Field(default=0, ge=0, le=3)                    # 0 = settings 기본값 (보통 2)
@@ -96,6 +101,8 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
         status="pending",
         input={
             "lyrics_len": len(req.lyrics), "style": req.style, "title": req.title,
+            # 주제·무드·키워드를 남겨야 썸네일/영상이 주제에 맞게 생성된다.
+            "issue": req.issue, "mood": req.mood, "keyword": req.keyword,
             "model": req.model, "n": req.n, "max_duration_sec": req.max_duration_sec,
         },
     )
