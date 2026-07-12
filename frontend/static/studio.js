@@ -94,9 +94,12 @@ async function makePlan() {
   try {
     const p = await api('/api/music/compose-plan', { method: 'POST', body: JSON.stringify({ issue }) });
     el('p-title').value = p.title || '';
-    // 앰비언트 니치 → 스타일을 무가사 앰비언트 쪽으로 보정
-    const ambient = 'ambient, soft pads, slow tempo, calm, no vocals';
-    el('p-style').value = p.style && /ambient|instrumental|calm|lofi/i.test(p.style) ? p.style : ambient;
+    // 채널 표준 스타일 — 테스트로 확정된 '부드럽게 흐르는 솔로 피아노' (비/잡음/신스/스타카토 배제)
+    const ambient = 'soft flowing legato acoustic piano, gentle rolling arpeggios, smooth connected '
+      + 'phrases, warm sustain pedal, continuous and dreamy, soft rounded gentle touch, calm and '
+      + 'soothing, solo grand piano, no staccato, no sharp attack, no percussive notes, no rain, '
+      + 'no synth, no noise, peaceful sleep';
+    el('p-style').value = ambient;
     el('p-mood').value = p.mood || '';
     el('p-keyword').value = p.keyword || '';
     el('p-lyrics').value = el('p-instrumental').checked ? '' : (p.lyrics || '');
@@ -145,8 +148,10 @@ async function generateSong() {
     }
     if (job.status !== 'done') throw new Error(job.error || `상태: ${job.status}`);
 
-    box.innerHTML = spinnerRow('곡 완성 · 보관 중…');
-    await api(`/api/music/archive/${job.id}`, { method: 'POST' });
+    if (!job.archived) {                     // Stable Audio는 생성 즉시 보관됨 → 건너뜀
+      box.innerHTML = spinnerRow('곡 완성 · 보관 중…');
+      await api(`/api/music/archive/${job.id}`, { method: 'POST' });
+    }
     box.innerHTML = `<div class="ok-row">✅ 원본 곡 완성 (#${job.id})</div>`;
     el('song-player').innerHTML = `<audio controls preload="none" src="/api/music/audio/${job.id}"></audio>`;
 

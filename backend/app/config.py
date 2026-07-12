@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # Stability AI (SD3 / Core / Ultra) — 영상 표지 이미지 생성용
     stability_api_key: str = ""
 
+    # 음악 생성 provider — 수면 앰비언트는 Stable Audio가 적합 (Mureka는 락으로 나옴)
+    # "mureka" | "stability_audio"
+    music_provider: str = "stability_audio"
+    # Stable Audio 2.5 (text-to-audio). 엔드포인트/필드는 실호출로 확정 — 설정값으로 조정 가능.
+    stability_audio_url: str = "https://api.stability.ai/v2beta/audio/stable-audio-2/text-to-audio"
+    stability_audio_seconds: int = 180          # 곡 길이(초), Stable Audio 최대 ~190
+    stability_audio_steps: int = 30             # stable-audio-2: 30~100 필수
+
     # 작곡가 직원 — 가사 생성 LLM 모델
     # 우선순위: gemini (무료, 빠름) → anthropic → openai → 룰 폴백
     songwriter_llm_provider: str = "gemini"   # gemini | anthropic | openai

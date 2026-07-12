@@ -26,6 +26,29 @@ ARCHIVE_DIR = Path(
 ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def extract_audio_url(output: dict | None) -> str:
+    """Mureka 곡 응답에서 오디오 URL 추출.
+
+    확정된 Mureka 형태:
+      {"status": "succeeded", "choices": [{"url": "...mp3", "flac_url": ..., "wav_url": ...}, ...]}
+    → choices[0].url 을 우선 사용. 과거/기타 형태는 폴백으로 처리.
+    """
+    out = output or {}
+    choices = out.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        first = choices[0]
+        u = first.get("url") or first.get("mp3_url") or first.get("audio_url")
+        if u:
+            return u
+    return (
+        out.get("audio_url")
+        or out.get("url")
+        or (out.get("song") or {}).get("audio_url")
+        or (out.get("data") or {}).get("audio_url")
+        or ""
+    )
+
+
 def _ext_from_url(url: str) -> str:
     """URL에서 확장자 추출 (mp3, wav, m4a 등). 없으면 mp3."""
     path = url.split("?")[0].lower()
@@ -40,7 +63,7 @@ async def download_and_archive(db: Session, job: Job) -> dict:
 
     Returns: {"ok": bool, "path": str, "size": int, "error": str}
     """
-    audio_url = (job.output or {}).get("audio_url")
+    audio_url = extract_audio_url(job.output)
     if not audio_url:
         return {"ok": False, "path": "", "size": 0, "error": "audio_url 없음"}
 

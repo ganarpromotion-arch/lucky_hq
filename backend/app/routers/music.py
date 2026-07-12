@@ -17,7 +17,8 @@ from sqlalchemy import desc
 
 from ..db import get_db
 from ..models import Job, Agent, AuditLog, Video, CuratorLesson
-from ..api_manager import call_api
+from ..api_manager import call_api, generate_music_stability, _resolve_secret
+from ..config import get_settings
 from ..songwriter import compose_plan as songwriter_compose
 from .. import archiver
 
@@ -26,7 +27,8 @@ router = APIRouter(prefix="/api/music", tags=["music"])
 
 class GenerateRequest(BaseModel):
     lyrics: str = Field(..., min_length=1, max_length=4000)
-    style: str = Field(default="pop", max_length=200)
+    # Stable Audio는 풍부한 프롬프트가 좋으므로 길게 허용 (Mureka도 문제없음)
+    style: str = Field(default="pop", max_length=2000)
     title: str = Field(default="", max_length=200)
     # 주제 일관성 — 썸네일/영상이 '주제에 맞게' 나오려면 곡의 주제·무드를 Job에 남겨야 한다.
     # (썸네일 생성은 job.input 의 issue/mood/keyword 를 읽어 이미지 프롬프트를 만든다.)
@@ -113,6 +115,12 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     _audit(db, "music.generate.requested", target=f"job:{job.id}", detail={"style": req.style, "title": req.title})
     db.commit()
 
+    # provider 분기: Stable Audio(수면 앰비언트, 폴링 없음) vs Mureka(노래)
+    settings = get_settings()
+    provider = _resolve_secret(db, "music_provider", settings.music_provider) or "mureka"
+    if provider == "stability_audio":
+        return await _generate_stability(db, job.id, req, settings)
+
     # 2) API 관리 직원 통해 Mureka 호출
     payload: dict = {"lyrics": req.lyrics, "style": req.style, "title": req.title}
     if req.model:
@@ -143,6 +151,35 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
         _set_agent_status(db, "music_producer", "대기")
         _audit(db, "music.generate.failed", target=f"job:{job.id}", detail={"error": job.error})
 
+    db.commit()
+    return _serialize_job(job)
+
+
+async def _generate_stability(db: Session, job_id: int, req: "GenerateRequest", settings) -> dict:
+    """Stable Audio 경로: 프롬프트 → 오디오 바이트 → 즉시 보관·완료 (폴링 불필요)."""
+    seconds = req.max_duration_sec or settings.stability_audio_seconds
+    # 스타일이 곧 프롬프트. 무가사 앰비언트는 style만 있으면 됨.
+    result = await generate_music_stability(
+        db, prompt=req.style, seconds=seconds, requester="music_producer",
+    )
+    job = db.get(Job, job_id)
+    if result.get("ok") and result.get("audio_bytes"):
+        archiver.ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = archiver.ARCHIVE_DIR / f"job_{job.id}.mp3"
+        out_path.write_bytes(result["audio_bytes"])
+        job.status = "done"
+        job.output = {"provider": "stability_audio", "seconds": seconds}
+        job.local_audio_path = str(out_path)
+        job.local_audio_size = out_path.stat().st_size
+        job.archived_at = datetime.utcnow()
+        _set_agent_status(db, "music_producer", "대기")
+        _audit(db, "music.generate.done", target=f"job:{job.id}",
+               detail={"provider": "stability_audio", "bytes": job.local_audio_size})
+    else:
+        job.status = "failed"
+        job.error = result.get("error", "Stable Audio 생성 실패")
+        _set_agent_status(db, "music_producer", "대기")
+        _audit(db, "music.generate.failed", target=f"job:{job.id}", detail={"error": job.error})
     db.commit()
     return _serialize_job(job)
 
@@ -217,13 +254,8 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
 
 def _serialize_job(j: Job) -> dict:
     out = j.output or {}
-    # 결과 오디오 URL 추출 (Mureka 응답 후보 키)
-    audio_url = (
-        out.get("audio_url")
-        or out.get("url")
-        or (out.get("song") or {}).get("audio_url")
-        or (out.get("data") or {}).get("audio_url")
-    )
+    # 결과 오디오 URL 추출 (Mureka 확정 형태: choices[0].url) — 공용 헬퍼 사용
+    audio_url = archiver.extract_audio_url(out)
     return {
         "id": j.id,
         "kind": j.kind,

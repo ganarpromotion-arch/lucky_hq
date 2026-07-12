@@ -17,7 +17,9 @@ import random
 import subprocess
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+import base64
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from .db import SessionLocal
 from .models import LongformRelease, Job, AuditLog
@@ -127,6 +129,68 @@ def make_ambient_cover(out_path: Path, title: str, subtitle: str = "",
     return out_path
 
 
+def _draw_cover_text(img: Image.Image, title: str, subtitle: str = "", watermark: str = "") -> None:
+    """커버 이미지 위에 제목/부제/워터마크 텍스트 오버레이 (하단 배치, 그림자로 가독성)."""
+    draw = ImageDraw.Draw(img)
+    title_font = _load_font(96)
+    sub_font = _load_font(40)
+    wm_font = _load_font(34)
+    t = (title or "Deep Sleep").strip()
+    bbox = draw.textbbox((0, 0), t, font=title_font)
+    tw = bbox[2] - bbox[0]
+    tx, ty = (LW - tw) // 2, int(LH * 0.60)
+    draw.text((tx + 3, ty + 3), t, font=title_font, fill=(0, 0, 0))
+    draw.text((tx, ty), t, font=title_font, fill=(245, 248, 255))
+    if subtitle:
+        bbox = draw.textbbox((0, 0), subtitle, font=sub_font)
+        sw = bbox[2] - bbox[0]
+        draw.text(((LW - sw) // 2, ty + 120), subtitle, font=sub_font, fill=(205, 214, 230))
+    if watermark:
+        bbox = draw.textbbox((0, 0), watermark, font=wm_font)
+        ww = bbox[2] - bbox[0]
+        draw.text(((LW - ww) // 2, LH - 72), watermark, font=wm_font, fill=(200, 210, 230))
+
+
+# 니치별 AI 커버 장면 프롬프트 (텍스트/사람 배제, 아늑·차분)
+_SCENE_PROMPTS = {
+    "sleep": ("cozy dark bedroom at night, large rain-streaked window, warm dim lamp glow, "
+              "blurred soft city lights outside, moody peaceful sleepy atmosphere, cinematic, soft bokeh"),
+    "study": ("cozy study desk by a rainy window at night, warm lamp, books and a small plant, "
+              "soft focused calm atmosphere, cinematic, soft bokeh, warm tones"),
+    "cinematic": ("serene misty mountain lake at dusk, soft glowing sky, calm reflective water, "
+                  "cinematic wide landscape, moody peaceful atmosphere, soft light"),
+}
+
+
+async def make_ai_cover(db, out_path: Path, title: str, subtitle: str = "",
+                        niche: str = "sleep", watermark: str = "",
+                        scene_prompt: str = "") -> Path | None:
+    """Stability 이미지로 16:9 분위기 커버 생성 → 제목/워터마크 오버레이. 실패 시 None."""
+    from .api_manager import call_api
+    prompt = (scene_prompt or _SCENE_PROMPTS.get(niche, _SCENE_PROMPTS["sleep"])) + ", no text, no people"
+    try:
+        r = await call_api(db, provider="stability", operation="generate",
+                           payload={"prompt": prompt, "aspect_ratio": "16:9", "model": "core"},
+                           requester="video_editor")
+        b64 = (r.get("data") or {}).get("image_b64")
+        if not r.get("ok") or not b64:
+            log.info(f"AI 커버 미사용 (fallback): {r.get('error')}")
+            return None
+        img = Image.open(BytesIO(base64.b64decode(b64))).convert("RGB")
+        img = ImageOps.fit(img, (LW, LH), Image.LANCZOS)
+        # 하단 어둡게 (텍스트 가독성)
+        ov = Image.new("RGBA", (LW, LH), (0, 0, 0, 0))
+        ImageDraw.Draw(ov).rectangle([(0, LH - 380), (LW, LH)], fill=(0, 0, 0, 130))
+        img = Image.alpha_composite(img.convert("RGBA"), ov.filter(ImageFilter.GaussianBlur(50))).convert("RGB")
+        _draw_cover_text(img, title, subtitle, watermark)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(out_path, "PNG")
+        return out_path
+    except Exception as e:
+        log.warning(f"AI 커버 생성 실패 → PIL 폴백: {e}")
+        return None
+
+
 # ── 영어 메타데이터 (유튜브 수동 업로드용) ───────────────────
 _NICHE_META = {
     "sleep": {
@@ -156,11 +220,15 @@ def build_metadata(theme: str, niche: str, target_min: int, title_hint: str = ""
     meta = _NICHE_META.get(niche, _NICHE_META["sleep"])
     label = {"sleep": "Deep Sleep Music", "study": "Focus Study Music",
              "cinematic": "Ambient Music"}.get(niche, "Ambient Music")
-    hint = (title_hint or theme or "Calm Night").strip()
-    yt_title = f"{label} — {hint} · {target_min//60 if target_min>=60 else target_min} "
-    yt_title += f"{'Hour' if target_min>=60 and target_min < 120 else ('Hours' if target_min>=120 else 'Min')} "
-    yt_title += f"Ambient for {meta['tail'].split(',')[0].title()}"
-    yt_title = yt_title.replace("  ", " ").strip()[:100]
+    # 유튜브 검색 최적화 제목 (곡명 대신 키워드 중심, 전부 영어)
+    hours = target_min // 60
+    dur_txt = (f"{hours} Hour" + ("s" if hours > 1 else "")) if target_min >= 60 else f"{target_min} Min"
+    yt_titles = {
+        "sleep": f"Relaxing Sleep Music — Deep Sleep Piano, Insomnia & Stress Relief · {dur_txt}",
+        "study": f"Relaxing Study Music — Piano for Focus, Concentration & Deep Work · {dur_txt}",
+        "cinematic": f"Relaxing Ambient Music — Calm Cinematic Soundscape for Peace · {dur_txt}",
+    }
+    yt_title = yt_titles.get(niche, yt_titles["sleep"])[:100]
 
     # 채널 서명 (있으면 상단 브랜딩 + 구독 유도)
     sign = ""
@@ -298,9 +366,7 @@ async def render_release(release_id: int) -> None:
                 import shutil as _sh
                 _sh.copyfile(local, dest)
                 return dest
-            out = j.output or {}
-            url = (out.get("audio_url") or out.get("url")
-                   or (out.get("song") or {}).get("audio_url"))
+            url = archiver.extract_audio_url(j.output)
             if not url:
                 return None
             await download_audio(url, dest)
@@ -321,15 +387,20 @@ async def render_release(release_id: int) -> None:
         audio_path = work / "sequence.mp3"
         await concat_audios(track_paths, audio_path)
 
-        # 2) 커버
-        title_hint = (job.input or {}).get("title", "") or rel.theme
-        subtitle = {"sleep": "Deep Sleep · Relax", "study": "Focus · Study",
-                    "cinematic": "Ambient · Calm"}.get(rel.niche, "Relax")
+        # 2) 커버 — 깔끔한 니치 기반 제목 (내부 곡명 대신)
+        title_hint = {"sleep": "Deep Sleep Piano", "study": "Focus Piano",
+                      "cinematic": "Ambient"}.get(rel.niche, "Deep Sleep")
+        subtitle = {"sleep": "Relaxing Piano for Sleep", "study": "Focus & Study",
+                    "cinematic": "Calm Ambient"}.get(rel.niche, "Relax")
         from .config import get_settings
         channel_name = get_settings().channel_name
         cover_path = work / "cover.png"
-        make_ambient_cover(cover_path, title=title_hint[:40], subtitle=subtitle,
-                           niche=rel.niche, seed=release_id, watermark=channel_name)
+        # AI 장면 커버 우선(분위기 있는 썸네일), 실패 시 PIL 그라데이션 폴백
+        ai = await make_ai_cover(db, cover_path, title=title_hint[:40], subtitle=subtitle,
+                                 niche=rel.niche, watermark=channel_name)
+        if not ai:
+            make_ambient_cover(cover_path, title=title_hint[:40], subtitle=subtitle,
+                               niche=rel.niche, seed=release_id, watermark=channel_name)
         rel.cover_path = str(cover_path)
         db.commit()
 

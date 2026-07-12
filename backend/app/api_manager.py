@@ -499,6 +499,74 @@ async def _call_stability(
     }
 
 
+async def generate_music_stability(
+    db: Session, prompt: str, seconds: int, requester: str = "music_producer",
+    timeout: float = 180.0,
+) -> dict[str, Any]:
+    """Stable Audio 2.5 text-to-audio — 프롬프트 → 오디오 바이트 (동기, 폴링 없음).
+
+    수면 앰비언트에 적합. 상업 라이선스 안전(정식 라이선스 데이터 학습).
+    Returns: {"ok": bool, "audio_bytes": bytes|None, "status_code": int, "error": str}
+    엔드포인트/필드는 Stability 문서가 JS라 실호출로 확정 — settings로 조정 가능.
+    """
+    settings = get_settings()
+    api_key = _resolve_secret(db, "stability_api_key", settings.stability_api_key)
+    if not api_key:
+        return {"ok": False, "audio_bytes": None, "status_code": 0,
+                "error": "Stability API 키 미설정 (/secrets 에서 등록)"}
+
+    seconds = max(1, min(190, int(seconds or settings.stability_audio_seconds)))
+    steps = int(_resolve_secret(db, "stability_audio_steps", "") or settings.stability_audio_steps)
+    url = _resolve_secret(db, "stability_audio_url", "") or settings.stability_audio_url
+
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "audio/*"}
+    # Stable Audio 필드 (실호출로 확정): prompt / duration / output_format / steps
+    files = {
+        "prompt": (None, (prompt or "ambient")[:2000]),
+        "duration": (None, str(seconds)),
+        "output_format": (None, "mp3"),
+        "steps": (None, str(steps)),
+    }
+
+    started = time.time()
+    ok = False
+    status_code = 0
+    error = ""
+    audio_bytes: bytes | None = None
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(url, headers=headers, files=files)
+        status_code = r.status_code
+        ctype = r.headers.get("content-type", "")
+        if r.is_success and ctype.startswith("audio"):
+            ok = True
+            audio_bytes = r.content
+        else:
+            # 오류는 JSON — 메시지 추출
+            try:
+                data = r.json()
+                msg = data.get("errors") or data.get("message") or data.get("name") or str(data)[:200]
+            except Exception:
+                msg = r.text[:200]
+            error = f"Stable Audio HTTP {r.status_code} — {msg}"
+    except Exception as e:
+        error = str(e)
+
+    duration_ms = int((time.time() - started) * 1000)
+    try:
+        db.add(ApiCall(
+            provider="stability_audio", operation="text-to-audio", requester=requester,
+            status_code=status_code, ok=ok, duration_ms=duration_ms,
+            request_summary={"prompt": (prompt or "")[:120], "seconds": seconds, "steps": steps},
+            response_summary={"bytes": len(audio_bytes) if audio_bytes else 0},
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {"ok": ok, "audio_bytes": audio_bytes, "status_code": status_code, "error": error}
+
+
 async def _call_telegram(
     db: Session, operation: str, payload: dict, settings, timeout: float
 ) -> dict[str, Any]:
