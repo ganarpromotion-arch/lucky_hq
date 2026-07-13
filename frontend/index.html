@@ -38,13 +38,64 @@
     </div>
     <div class="card-body">
       <div class="field">
-        <label>니치 (채널 정체성)</label>
-        <div class="seg" id="niche-seg">
-          <button class="seg-btn on" data-niche="sleep">🌙 수면·힐링 <span class="seg-sub">RPM 최상 $10+</span></button>
-          <button class="seg-btn" data-niche="study">📚 집중·스터디 <span class="seg-sub">$3~8</span></button>
-          <button class="seg-btn" data-niche="cinematic">🎬 시네마틱 <span class="seg-sub">$3~8</span></button>
+        <label>곡 종류</label>
+        <div class="seg" id="type-seg">
+          <button class="seg-btn on" data-type="instrumental">🎹 무가사 (수면·앰비언트) <span class="seg-sub">Stable Audio</span></button>
+          <button class="seg-btn" data-type="vocal">🎤 가사 있는 노래 <span class="seg-sub">Mureka 보컬</span></button>
         </div>
       </div>
+
+      <!-- 무가사 옵션 (니치) -->
+      <div id="instrumental-opts">
+        <div class="field">
+          <label>니치 (채널 정체성)</label>
+          <div class="seg" id="niche-seg">
+            <button class="seg-btn on" data-niche="sleep">🌙 수면·힐링 <span class="seg-sub">RPM 최상 $10+</span></button>
+            <button class="seg-btn" data-niche="study">📚 집중·스터디 <span class="seg-sub">$3~8</span></button>
+            <button class="seg-btn" data-niche="cinematic">🎬 시네마틱 <span class="seg-sub">$3~8</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 가사 있는 노래 옵션 (장르·언어·연대) -->
+      <div id="vocal-opts" class="hidden">
+        <div class="field">
+          <label>장르</label>
+          <div class="seg wrap" id="genre-seg">
+            <button class="seg-btn on" data-genre="ballad">발라드</button>
+            <button class="seg-btn" data-genre="dance">댄스</button>
+            <button class="seg-btn" data-genre="citypop">시티팝</button>
+            <button class="seg-btn" data-genre="rnb">R&amp;B</button>
+            <button class="seg-btn" data-genre="rock">록</button>
+            <button class="seg-btn" data-genre="acoustic">어쿠스틱</button>
+            <button class="seg-btn" data-genre="lofi">로파이</button>
+            <button class="seg-btn" data-genre="jazz">재즈</button>
+            <button class="seg-btn" data-genre="pop">팝</button>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>언어</label>
+            <div class="seg wrap" id="lang-seg">
+              <button class="seg-btn on" data-lang="Korean">한국어</button>
+              <button class="seg-btn" data-lang="English">English</button>
+              <button class="seg-btn" data-lang="Japanese">日本語</button>
+              <button class="seg-btn" data-lang="Chinese">中文</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>연대</label>
+            <div class="seg wrap" id="era-seg">
+              <button class="seg-btn on" data-era="modern">현대</button>
+              <button class="seg-btn" data-era="2000s">2000s</button>
+              <button class="seg-btn" data-era="90s">90s</button>
+              <button class="seg-btn" data-era="80s">80s</button>
+              <button class="seg-btn" data-era="70s">70s</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <textarea id="theme" class="input" rows="3" placeholder="예: 비 내리는 깊은 밤, 마음이 가라앉는 잔잔한 앰비언트"></textarea>
       <div class="row gap">
         <button class="btn" id="btn-suggest">🗂 오늘의 추천 받기</button>

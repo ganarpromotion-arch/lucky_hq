@@ -35,6 +35,9 @@ class GenerateRequest(BaseModel):
     issue: str = Field(default="", max_length=1000)          # 곡의 주제/이슈 (기획안의 원본 주제)
     mood: str = Field(default="", max_length=100)            # 분위기 (기획안 mood)
     keyword: str = Field(default="", max_length=100)         # 핵심 키워드 (기획안 keyword)
+    # provider 지정 — 가사 있는 노래는 "mureka"(보컬), 무가사 앰비언트는 "stability_audio".
+    # 비우면 서버 기본값(music_provider) 사용.
+    provider: str = Field(default="", max_length=32)
     # Mureka 옵션 — 비우면 settings 기본값 사용
     model: str = Field(default="", max_length=64)            # "auto" | "mureka-7.5" | "mureka-v8" | "mureka-v9"
     n: int = Field(default=0, ge=0, le=3)                    # 0 = settings 기본값 (보통 2)
@@ -115,9 +118,9 @@ async def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     _audit(db, "music.generate.requested", target=f"job:{job.id}", detail={"style": req.style, "title": req.title})
     db.commit()
 
-    # provider 분기: Stable Audio(수면 앰비언트, 폴링 없음) vs Mureka(노래)
+    # provider 분기: 요청 지정 > 서버 기본값. Stable Audio(무가사, 폴링 없음) vs Mureka(보컬 노래)
     settings = get_settings()
-    provider = _resolve_secret(db, "music_provider", settings.music_provider) or "mureka"
+    provider = req.provider or _resolve_secret(db, "music_provider", settings.music_provider) or "mureka"
     if provider == "stability_audio":
         return await _generate_stability(db, job.id, req, settings)
 

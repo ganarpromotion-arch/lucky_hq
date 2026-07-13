@@ -37,7 +37,35 @@ function esc(s) {
 }
 
 /* ── 상태 ── */
-const state = { niche: 'sleep', targetMin: 60, job: null, selected: new Set() };
+const state = { songType: 'instrumental', niche: 'sleep', genre: 'ballad',
+                language: 'Korean', era: 'modern', targetMin: 60, job: null, selected: new Set() };
+
+/* 장르/연대 → Mureka 스타일 프롬프트 조각 */
+const GENRE_STYLE = {
+  ballad: 'emotional ballad, piano and strings, heartfelt expressive vocals, slow and moving',
+  dance: 'upbeat dance pop, energetic beat, catchy synths, bright and danceable',
+  citypop: 'city pop, groovy funky bassline, retro synths, smooth polished vocals',
+  rnb: 'smooth R&B, soulful vocals, mellow groove, warm keys',
+  rock: 'rock band, electric guitars, driving drums, powerful vocals',
+  acoustic: 'acoustic singer-songwriter, warm acoustic guitar, intimate gentle vocals',
+  lofi: 'lofi hip hop, chill mellow beat, soft relaxed vocals',
+  jazz: 'smooth jazz lounge, piano and sax, silky vocals',
+  pop: 'modern pop, catchy melody, polished production, clear vocals',
+};
+const ERA_STYLE = {
+  modern: 'modern 2020s production, clean and polished',
+  '2000s': '2000s pop style, early digital production',
+  '90s': '1990s style, warm analog-digital blend',
+  '80s': '1980s synth-pop style, retro synths, gated reverb drums, nostalgic',
+  '70s': '1970s retro style, vintage analog warmth, classic instruments',
+};
+function vocalStyle() {
+  return `${GENRE_STYLE[state.genre] || 'pop'}, ${ERA_STYLE[state.era] || ''}, ${state.language} lyrics and vocals`;
+}
+function vocalBrief(theme) {
+  return `${theme}. Write song lyrics in ${state.language} for a ${state.genre} song in ${state.era} style. `
+    + `Singable with clear verses and a catchy chorus.`;
+}
 const ORDER = ['theme', 'plan', 'song', 'longform'];
 function setStep(step) {
   const idx = ORDER.indexOf(step);
@@ -91,18 +119,25 @@ async function makePlan() {
   const issue = el('theme').value.trim();
   if (!issue) { hint('theme-hint', '주제를 먼저 입력하세요', 'fail'); return; }
   const btn = el('btn-plan'); btn.disabled = true; hint('theme-hint', '기획안 만드는 중…');
+  const isVocal = state.songType === 'vocal';
   try {
-    const p = await api('/api/music/compose-plan', { method: 'POST', body: JSON.stringify({ issue }) });
+    const issueToSend = isVocal ? vocalBrief(issue) : issue;
+    const p = await api('/api/music/compose-plan', { method: 'POST', body: JSON.stringify({ issue: issueToSend }) });
     el('p-title').value = p.title || '';
-    // 채널 표준 스타일 — 테스트로 확정된 '부드럽게 흐르는 솔로 피아노' (비/잡음/신스/스타카토 배제)
-    const ambient = 'soft flowing legato acoustic piano, gentle rolling arpeggios, smooth connected '
-      + 'phrases, warm sustain pedal, continuous and dreamy, soft rounded gentle touch, calm and '
-      + 'soothing, solo grand piano, no staccato, no sharp attack, no percussive notes, no rain, '
-      + 'no synth, no noise, peaceful sleep';
-    el('p-style').value = ambient;
+    if (isVocal) {
+      // 가사 있는 노래: 장르·연대·언어 기반 보컬 스타일 + LLM이 쓴 가사
+      el('p-style').value = vocalStyle();
+      el('p-lyrics').value = p.lyrics || '';
+    } else {
+      // 무가사: '부드럽게 흐르는 솔로 피아노' 표준 스타일
+      el('p-style').value = 'soft flowing legato acoustic piano, gentle rolling arpeggios, smooth connected '
+        + 'phrases, warm sustain pedal, continuous and dreamy, soft rounded gentle touch, calm and '
+        + 'soothing, solo grand piano, no staccato, no sharp attack, no percussive notes, no rain, '
+        + 'no synth, no noise, peaceful sleep';
+      el('p-lyrics').value = '';
+    }
     el('p-mood').value = p.mood || '';
     el('p-keyword').value = p.keyword || '';
-    el('p-lyrics').value = el('p-instrumental').checked ? '' : (p.lyrics || '');
     const src = el('plan-src');
     src.textContent = p.source === 'llm' ? 'AI 작성' : '규칙 기반';
     src.className = 'src-badge ' + (p.source === 'llm' ? 'ok' : 'warn');
@@ -114,19 +149,22 @@ async function makePlan() {
 
 /* ── ③ 곡 생성 + 폴링 + 자동 보관 ── */
 async function generateSong() {
-  const instrumental = el('p-instrumental').checked;
+  const isVocal = state.songType === 'vocal';
   let style = el('p-style').value.trim() || 'ambient, calm';
   let lyrics = el('p-lyrics').value.trim();
-  if (instrumental) {
-    lyrics = '[instrumental]';                       // 무가사 지시
+  let provider;
+  if (isVocal) {
+    provider = 'mureka';                             // 보컬 노래
+    if (!lyrics) { hint('plan-hint', '가사가 비어 있습니다', 'fail'); return; }
+  } else {
+    provider = 'stability_audio';                    // 무가사 앰비언트
+    lyrics = '[instrumental]';
     if (!/instrumental|no vocals/i.test(style)) style += ', instrumental, no vocals';
-  } else if (!lyrics) {
-    hint('plan-hint', '가사가 비어 있습니다 (무가사면 위 체크박스를 켜세요)', 'fail'); return;
   }
   const payload = {
     issue: el('theme').value.trim(),
     title: el('p-title').value.trim(),
-    style, mood: el('p-mood').value.trim(), keyword: el('p-keyword').value.trim(), lyrics,
+    style, mood: el('p-mood').value.trim(), keyword: el('p-keyword').value.trim(), lyrics, provider,
   };
 
   const btn = el('btn-generate'); btn.disabled = true; hint('plan-hint', '');
@@ -272,6 +310,19 @@ async function refreshGallery() {
 /* ── 바인딩 ── */
 bindSeg('niche-seg', 'niche', (v) => { state.niche = v; });
 bindSeg('len-seg', 'min', (v) => { state.targetMin = parseInt(v, 10); });
+bindSeg('type-seg', 'type', (v) => {
+  state.songType = v;
+  el('instrumental-opts').classList.toggle('hidden', v !== 'instrumental');
+  el('vocal-opts').classList.toggle('hidden', v !== 'vocal');
+  const cb = el('p-instrumental'); if (cb) { cb.checked = (v === 'instrumental'); el('lyrics-field').style.opacity = v === 'vocal' ? '1' : '.5'; }
+  // 무가사면 니치=sleep 유지, 가사면 테마 placeholder 힌트
+  el('theme').placeholder = v === 'vocal'
+    ? '예: 첫사랑의 설렘 / 이별 후의 밤 / 여름밤 드라이브'
+    : '예: 비 내리는 깊은 밤, 마음이 가라앉는 잔잔한 앰비언트';
+});
+bindSeg('genre-seg', 'genre', (v) => { state.genre = v; });
+bindSeg('lang-seg', 'lang', (v) => { state.language = v; });
+bindSeg('era-seg', 'era', (v) => { state.era = v; });
 el('p-instrumental').addEventListener('change', (e) => {
   el('lyrics-field').style.opacity = e.target.checked ? '.5' : '1';
 });
