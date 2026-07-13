@@ -47,18 +47,19 @@ def today_seed() -> int:
 
 
 # ── 5×3 안 제안 (Gemini 사용) ───────────────────────────
-CURATOR_SYSTEM = """You are a curator for a GLOBAL sleep & ambient music YouTube channel (Healing Waves).
-Before a relaxing instrumental track (piano / ambient) is made, propose 5x3 options so the owner can pick a direction.
-Focus on calm, cozy, sleepy SCENES and MOODS. Everything must be in ENGLISH (global channel). Today is {today}.
+CURATOR_SYSTEM = """너는 수면·앰비언트 음악 채널(Healing Waves)의 큐레이터야.
+잔잔한 곡을 만들기 전에, 방향을 고를 수 있게 5x3 옵션을 제안한다.
+차분하고 포근하고 졸린 '장면'과 '분위기' 위주로. 오늘은 {today}.
+추천 칩은 사용자가 읽고 고르는 용도이니 반드시 한국어로. (실제 유튜브 제목·설명은 영어로 따로 나감)
 
-Output ONLY this JSON block. No explanation, no code fence.
+출력은 아래 JSON 한 덩어리만. 설명·코드펜스 금지.
 {{
-  "languages": ["Piano", "Ambient", "Lo-fi", "Nature", "Cinematic"],
-  "moods": ["Calm & Peaceful", "Warm & Cozy", "Dreamy & Soft", "Melancholic & Tender", "Serene & Still"],
-  "keywords": ["Rainy Night", "Moonlit Room", "Quiet Snowfall", "Cozy Fireplace", "Ocean at Night"]
+  "languages": ["피아노", "앰비언트", "로파이", "자연", "시네마틱"],
+  "moods": ["고요하고 평화로운", "포근하고 다정한", "몽환적이고 아련한", "잔잔하고 사색적인", "깊은 이완과 안식"],
+  "keywords": ["비 내리는 밤", "달빛 드는 방", "고요한 눈 내리는 밤", "벽난로 앞의 저녁", "잔잔한 밤바다", "새벽 안개 호수", "별이 쏟아지는 밤", "따뜻한 서재"]
 }}
 
-Vary the options each time. Keep them evocative sleep/relaxation scenes. Avoid anything energetic, loud, or food/marketing related."""
+moods는 5개, keywords는 7~8개로 다양하게. 은은한 수면·휴식 장면 위주. 시끄럽거나 에너지 넘치거나 음식·마케팅 관련은 금지."""
 
 
 def _strip_code_fence(text: str) -> str:
@@ -85,20 +86,23 @@ def _extract_json(text: str) -> Optional[str]:
 def _fallback_options() -> dict:
     """LLM 실패 시 기본 옵션 (계절 무관 안전한 세트)."""
     return {
-        "languages": ["Piano", "Ambient", "Lo-fi", "Nature", "Cinematic"],
+        "languages": ["피아노", "앰비언트", "로파이", "자연", "시네마틱"],
         "moods": [
-            "Calm & Peaceful",
-            "Warm & Cozy",
-            "Dreamy & Soft",
-            "Melancholic & Tender",
-            "Serene & Still",
+            "고요하고 평화로운",
+            "포근하고 다정한",
+            "몽환적이고 아련한",
+            "잔잔하고 사색적인",
+            "깊은 이완과 안식",
         ],
         "keywords": [
-            "Rainy Night",
-            "Moonlit Room",
-            "Quiet Snowfall",
-            "Cozy Fireplace",
-            "Ocean at Night",
+            "비 내리는 밤",
+            "달빛 드는 방",
+            "고요한 눈 내리는 밤",
+            "벽난로 앞의 저녁",
+            "잔잔한 밤바다",
+            "새벽 안개 호수",
+            "별이 쏟아지는 밤",
+            "따뜻한 서재",
         ],
         "source": "fallback",
     }
@@ -190,10 +194,15 @@ async def propose_options(db: Session) -> dict:
     # 5개로 자르기/채우기
     fb = _fallback_options()
     def normalize(arr: list, fallback_arr: list) -> list[str]:
-        clean = [str(x).strip() for x in arr if x and str(x).strip()][:5]
+        clean = [str(x).strip() for x in arr if x and str(x).strip()][:8]
         while len(clean) < 5:
             clean.append(fallback_arr[len(clean) % len(fallback_arr)])
-        return clean
+        # 중복 제거 (순서 유지)
+        seen = set(); out = []
+        for x in clean:
+            if x not in seen:
+                seen.add(x); out.append(x)
+        return out
 
     # 교육 메모 사용 카운트 + 마지막 사용 시각 업데이트
     if lesson_ids:

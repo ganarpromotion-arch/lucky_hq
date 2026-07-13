@@ -339,5 +339,6 @@ el('btn-more').addEventListener('click', () => {
 });
 
 checkHealth();
+loadSuggestions();   // 추천을 기본으로 자동 표시 (버튼 안 눌러도)
 renderTrackList();   // 기존 보관곡이 있으면 목록 표시
 refreshGallery();
