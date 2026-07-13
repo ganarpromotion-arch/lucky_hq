@@ -37,7 +37,7 @@ function esc(s) {
 }
 
 /* ── 상태 ── */
-const state = { songType: 'instrumental', niche: 'sleep', genre: 'ballad',
+const state = { songType: 'instrumental', niche: 'sleep', instrument: 'piano', genre: 'ballad',
                 language: 'Korean', era: 'modern', targetMin: 60, job: null, selected: new Set() };
 
 /* 장르/연대 → Mureka 스타일 프롬프트 조각 */
@@ -59,16 +59,20 @@ const ERA_STYLE = {
   '80s': '1980s synth-pop style, retro synths, gated reverb drums, nostalgic',
   '70s': '1970s retro style, vintage analog warmth, classic instruments',
 };
-/* 무가사 니치별 스타일 (수면=피아노 / 집중=로파이 / 시네마틱=앰비언트) */
-const NICHE_STYLE = {
-  sleep: 'soft flowing legato acoustic piano, gentle rolling arpeggios, smooth connected phrases, '
-    + 'warm sustain pedal, continuous and dreamy, soft rounded gentle touch, calm and soothing, '
-    + 'solo grand piano, no staccato, no sharp attack, no percussive notes, no rain, no synth, no noise, peaceful sleep',
-  study: 'lofi hip hop, chill mellow beat, warm soft keys, mellow jazzy chords, gentle vinyl crackle, '
-    + 'relaxed and focused, steady soft groove, instrumental, no vocals, calm study and concentration vibe',
-  cinematic: 'cinematic ambient soundscape, soft atmospheric strings and warm pads, gentle evolving textures, '
-    + 'emotional and spacious, film score feel, slow and calm, instrumental, no drums, deep reverb',
+/* 무가사 악기별 스타일 (사용자가 악기 선택) */
+const INSTRUMENT_STYLE = {
+  piano: 'soft flowing legato solo grand piano, gentle rolling arpeggios, warm sustain pedal, tender and calm, no drums, no percussion',
+  guitar: 'soft fingerstyle acoustic guitar, gentle warm nylon strings, mellow and intimate, slow and calm, no drums, no percussion',
+  strings: 'warm soft string ensemble, gentle cello and violin, lush and emotional, slow legato, calm, no drums, no percussion',
+  harp: 'gentle flowing harp, delicate glistening arpeggios, soft and dreamy, calm and soothing, no drums, no percussion',
+  musicbox: 'delicate music box, soft twinkling gentle melody, nostalgic and tender, calm lullaby, no drums, no percussion',
+  synth: 'warm ambient synth pads, soft evolving textures, gentle dreamy spacious atmosphere, calm, no drums, no percussion',
+  lofi: 'lofi hip hop, chill mellow beat, warm keys, jazzy chords, gentle vinyl crackle, relaxed groove',
+  jazzpiano: 'soft smooth jazz piano, gentle mellow chords, warm intimate lounge feel, slow and calm, brushed soft',
 };
+function instrumentalStyle() {
+  return `${INSTRUMENT_STYLE[state.instrument] || INSTRUMENT_STYLE.piano}, no rain, no noise, peaceful and soothing`;
+}
 function vocalStyle() {
   return `${GENRE_STYLE[state.genre] || 'pop'}, ${ERA_STYLE[state.era] || ''}, ${state.language} lyrics and vocals`;
 }
@@ -139,8 +143,8 @@ async function makePlan() {
       el('p-style').value = vocalStyle();
       el('p-lyrics').value = p.lyrics || '';
     } else {
-      // 무가사: 니치별 스타일 (수면=피아노 / 집중=로파이 / 시네마틱=앰비언트)
-      el('p-style').value = NICHE_STYLE[state.niche] || NICHE_STYLE.sleep;
+      // 무가사: 선택한 악기 기반 스타일
+      el('p-style').value = instrumentalStyle();
       el('p-lyrics').value = '';
     }
     el('p-mood').value = p.mood || '';
@@ -257,7 +261,7 @@ const AF_MOODS = ['gentle', 'warm', 'dreamy', 'soft', 'tender', 'nostalgic',
 async function autoFill() {
   const isVocal = state.songType === 'vocal';
   const count = autofillCount();
-  const baseStyle = isVocal ? vocalStyle() : (NICHE_STYLE[state.niche] || NICHE_STYLE.sleep);
+  const baseStyle = isVocal ? vocalStyle() : instrumentalStyle();
   const theme = el('theme').value.trim() || (isVocal ? 'a heartfelt emotional song' : 'calm and peaceful');
   const btnA = el('btn-autofill'), btnL = el('btn-longform');
   btnA.disabled = true; btnL.disabled = true;
@@ -381,6 +385,7 @@ async function refreshGallery() {
 
 /* ── 바인딩 ── */
 bindSeg('niche-seg', 'niche', (v) => { state.niche = v; });
+bindSeg('inst-seg', 'inst', (v) => { state.instrument = v; });
 bindSeg('len-seg', 'min', (v) => { state.targetMin = parseInt(v, 10); updateAutofillLabel(); });
 bindSeg('type-seg', 'type', (v) => {
   state.songType = v;
