@@ -59,6 +59,16 @@ const ERA_STYLE = {
   '80s': '1980s synth-pop style, retro synths, gated reverb drums, nostalgic',
   '70s': '1970s retro style, vintage analog warmth, classic instruments',
 };
+/* 무가사 니치별 스타일 (수면=피아노 / 집중=로파이 / 시네마틱=앰비언트) */
+const NICHE_STYLE = {
+  sleep: 'soft flowing legato acoustic piano, gentle rolling arpeggios, smooth connected phrases, '
+    + 'warm sustain pedal, continuous and dreamy, soft rounded gentle touch, calm and soothing, '
+    + 'solo grand piano, no staccato, no sharp attack, no percussive notes, no rain, no synth, no noise, peaceful sleep',
+  study: 'lofi hip hop, chill mellow beat, warm soft keys, mellow jazzy chords, gentle vinyl crackle, '
+    + 'relaxed and focused, steady soft groove, instrumental, no vocals, calm study and concentration vibe',
+  cinematic: 'cinematic ambient soundscape, soft atmospheric strings and warm pads, gentle evolving textures, '
+    + 'emotional and spacious, film score feel, slow and calm, instrumental, no drums, deep reverb',
+};
 function vocalStyle() {
   return `${GENRE_STYLE[state.genre] || 'pop'}, ${ERA_STYLE[state.era] || ''}, ${state.language} lyrics and vocals`;
 }
@@ -129,11 +139,8 @@ async function makePlan() {
       el('p-style').value = vocalStyle();
       el('p-lyrics').value = p.lyrics || '';
     } else {
-      // 무가사: '부드럽게 흐르는 솔로 피아노' 표준 스타일
-      el('p-style').value = 'soft flowing legato acoustic piano, gentle rolling arpeggios, smooth connected '
-        + 'phrases, warm sustain pedal, continuous and dreamy, soft rounded gentle touch, calm and '
-        + 'soothing, solo grand piano, no staccato, no sharp attack, no percussive notes, no rain, '
-        + 'no synth, no noise, peaceful sleep';
+      // 무가사: 니치별 스타일 (수면=피아노 / 집중=로파이 / 시네마틱=앰비언트)
+      el('p-style').value = NICHE_STYLE[state.niche] || NICHE_STYLE.sleep;
       el('p-lyrics').value = '';
     }
     el('p-mood').value = p.mood || '';

@@ -225,8 +225,8 @@ def build_metadata(theme: str, niche: str, target_min: int, title_hint: str = ""
     dur_txt = (f"{hours} Hour" + ("s" if hours > 1 else "")) if target_min >= 60 else f"{target_min} Min"
     yt_titles = {
         "sleep": f"Relaxing Sleep Music — Deep Sleep Piano, Insomnia & Stress Relief · {dur_txt}",
-        "study": f"Relaxing Study Music — Piano for Focus, Concentration & Deep Work · {dur_txt}",
-        "cinematic": f"Relaxing Ambient Music — Calm Cinematic Soundscape for Peace · {dur_txt}",
+        "study": f"Lofi Study Music — Beats for Focus, Concentration & Deep Work · {dur_txt}",
+        "cinematic": f"Cinematic Ambient Music — Calm Atmospheric Soundscape for Peace · {dur_txt}",
     }
     yt_title = yt_titles.get(niche, yt_titles["sleep"])[:100]
 
@@ -388,10 +388,10 @@ async def render_release(release_id: int) -> None:
         await concat_audios(track_paths, audio_path)
 
         # 2) 커버 — 깔끔한 니치 기반 제목 (내부 곡명 대신)
-        title_hint = {"sleep": "Deep Sleep Piano", "study": "Focus Piano",
-                      "cinematic": "Ambient"}.get(rel.niche, "Deep Sleep")
-        subtitle = {"sleep": "Relaxing Piano for Sleep", "study": "Focus & Study",
-                    "cinematic": "Calm Ambient"}.get(rel.niche, "Relax")
+        title_hint = {"sleep": "Deep Sleep Piano", "study": "Lofi Focus",
+                      "cinematic": "Cinematic Calm"}.get(rel.niche, "Deep Sleep")
+        subtitle = {"sleep": "Relaxing Piano for Sleep", "study": "Lofi for Study & Focus",
+                    "cinematic": "Cinematic Ambient"}.get(rel.niche, "Relax")
         from .config import get_settings
         channel_name = get_settings().channel_name
         cover_path = work / "cover.png"
