@@ -179,9 +179,11 @@
         </div>
       </div>
       <div class="row gap">
-        <button class="btn btn-primary" id="btn-longform" disabled>🌙 선택 곡으로 롱폼 렌더</button>
+        <button class="btn btn-primary" id="btn-autofill">🎵 비슷한 곡 자동생성 + 채우기 →</button>
+        <button class="btn" id="btn-longform" disabled>🌙 선택 곡만으로 렌더</button>
         <span id="longform-hint" class="hint"></span>
       </div>
+      <p class="desc" style="margin-top:6px;">「자동생성」은 현재 설정(니치·장르·언어)으로 <b id="autofill-count">여러</b> 곡을 새로 만들어 목표 길이를 채웁니다.</p>
       <div id="longform-status" class="progress-box hidden"></div>
     </div>
   </section>

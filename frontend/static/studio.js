@@ -239,6 +239,71 @@ function updateTrackCount() {
   el('btn-longform').disabled = state.selected.size === 0;
 }
 
+/* ── 비슷한 곡 자동생성 + 채우기 ── */
+function autofillCount() {
+  const isVocal = state.songType === 'vocal';
+  const perTrack = isVocal ? 150 : 180;                 // 곡당 대략 길이(초)
+  const needed = Math.round((state.targetMin * 60) / perTrack);
+  const cap = isVocal ? 8 : 15;                          // 비용/시간 상한
+  return Math.max(2, Math.min(needed, cap));
+}
+function updateAutofillLabel() {
+  const c = el('autofill-count'); if (c) c.textContent = autofillCount() + '';
+}
+const AF_MOODS = ['gentle', 'warm', 'dreamy', 'soft', 'tender', 'nostalgic',
+                  'calm', 'serene', 'mellow', 'quiet', 'soothing', 'peaceful',
+                  'late night', 'early dawn', 'moonlit'];
+
+async function autoFill() {
+  const isVocal = state.songType === 'vocal';
+  const count = autofillCount();
+  const baseStyle = isVocal ? vocalStyle() : (NICHE_STYLE[state.niche] || NICHE_STYLE.sleep);
+  const theme = el('theme').value.trim() || (isVocal ? 'a heartfelt emotional song' : 'calm and peaceful');
+  const btnA = el('btn-autofill'), btnL = el('btn-longform');
+  btnA.disabled = true; btnL.disabled = true;
+  const box = el('longform-status'); box.classList.remove('hidden');
+  const made = [];
+  try {
+    for (let i = 0; i < count; i++) {
+      box.innerHTML = spinnerRow(`비슷한 곡 자동 생성 중… ${i + 1}/${count}` + (isVocal ? ' (보컬은 곡당 수십 초)' : ''));
+      const variant = AF_MOODS[i % AF_MOODS.length];
+      let style, lyrics = '[instrumental]', provider = 'stability_audio', title = `Track ${i + 1}`;
+      if (isVocal) {
+        provider = 'mureka';
+        const p = await api('/api/music/compose-plan', { method: 'POST', body: JSON.stringify({ issue: vocalBrief(theme) }) });
+        lyrics = p.lyrics || ''; title = p.title || `Track ${i + 1}`;
+        style = `${variant}, ${baseStyle}`;
+        if (!lyrics) continue;
+      } else {
+        style = `${variant}, ${baseStyle}, instrumental, no vocals`;
+      }
+      let job = await api('/api/music/generate', {
+        method: 'POST',
+        body: JSON.stringify({ issue: theme, title, style, mood: variant, keyword: '', lyrics, provider }),
+      });
+      const deadline = Date.now() + 4 * 60 * 1000;
+      while ((job.status === 'running' || job.status === 'pending') && Date.now() < deadline) {
+        await sleep(5000); job = await api(`/api/music/jobs/${job.id}`);
+      }
+      if (job.status === 'done') {
+        if (!job.archived) { try { await api(`/api/music/archive/${job.id}`, { method: 'POST' }); } catch {} }
+        state.selected.add(job.id); made.push(job.id);
+      } else if (job.error) {
+        box.innerHTML = `<div class="fail-row">✗ ${esc(job.error)}</div>`;
+        await renderTrackList(); btnA.disabled = false; return;
+      }
+    }
+    await renderTrackList();
+    if (!made.length) { box.innerHTML = `<div class="fail-row">✗ 곡 생성 실패 (키/크레딧 확인)</div>`; return; }
+    box.innerHTML = `<div class="ok-row">✅ ${made.length}곡 생성 완료 · 롱폼 렌더 시작…</div>`;
+    await makeLongform();
+  } catch (e) {
+    box.innerHTML = `<div class="fail-row">✗ ${esc(e.message)}</div>`;
+  } finally {
+    btnA.disabled = false;
+  }
+}
+
 /* ── 롱폼 렌더 + 폴링 ── */
 async function makeLongform() {
   const ids = [...state.selected];
@@ -316,9 +381,10 @@ async function refreshGallery() {
 
 /* ── 바인딩 ── */
 bindSeg('niche-seg', 'niche', (v) => { state.niche = v; });
-bindSeg('len-seg', 'min', (v) => { state.targetMin = parseInt(v, 10); });
+bindSeg('len-seg', 'min', (v) => { state.targetMin = parseInt(v, 10); updateAutofillLabel(); });
 bindSeg('type-seg', 'type', (v) => {
   state.songType = v;
+  updateAutofillLabel();
   el('instrumental-opts').classList.toggle('hidden', v !== 'instrumental');
   el('vocal-opts').classList.toggle('hidden', v !== 'vocal');
   const cb = el('p-instrumental'); if (cb) { cb.checked = (v === 'instrumental'); el('lyrics-field').style.opacity = v === 'vocal' ? '1' : '.5'; }
@@ -337,6 +403,7 @@ el('btn-suggest').addEventListener('click', loadSuggestions);
 el('btn-plan').addEventListener('click', makePlan);
 el('btn-generate').addEventListener('click', generateSong);
 el('btn-longform').addEventListener('click', makeLongform);
+el('btn-autofill').addEventListener('click', autoFill);
 el('btn-more').addEventListener('click', () => {
   // 새 트랙 하나 더: 주제 단계로 올라가 입력만 비움 (선택 곡·니치는 유지)
   el('p-title').value = ''; el('p-lyrics').value = '';
@@ -346,6 +413,7 @@ el('btn-more').addEventListener('click', () => {
 });
 
 checkHealth();
+updateAutofillLabel();
 loadSuggestions();   // 추천을 기본으로 자동 표시 (버튼 안 눌러도)
 renderTrackList();   // 기존 보관곡이 있으면 목록 표시
 refreshGallery();
