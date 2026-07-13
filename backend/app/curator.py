@@ -25,33 +25,13 @@ from .models import CuratorLesson
 log = logging.getLogger("lucky_hq.curator")
 
 
-# 한국어 이슈 풀 (자동 배치용 — LLM 없이 빠른 픽)
+# 수면·앰비언트 장면 풀 (자동 배치용 — LLM 없이 빠른 픽, 전부 영어/글로벌)
 ISSUE_POOL: list[str] = [
-    "진솔정 가을 메뉴 곱창전골",
-    "진솔정 한 잔의 막걸리",
-    "진솔정 가게 앞 골목의 저녁",
-    "곱창전골 한 점의 위로",
-    "주말 저녁 친구들과 진솔정",
-    "오월의 햇살 가득한 오후",
-    "초여름 바람이 부는 거리",
-    "비 오는 날 창가의 커피",
-    "초록이 짙어지는 5월",
-    "장마 시작 전 마지막 푸른 날",
-    "월요일 아침의 출근길",
-    "퇴근 후 마시는 한 잔",
-    "오랜만에 만난 친구와 산책",
-    "주말 늦은 아침의 여유",
-    "혼자 듣는 새벽의 라디오",
-    "힘든 한 주를 버텨낸 너에게",
-    "다시 시작하는 용기",
-    "포기하지 않는 마음",
-    "오래전 그 사람 생각",
-    "닿지 못한 마음 한 줄",
-    "한강을 따라 걷는 저녁",
-    "야경이 아름다운 옥상",
-    "지하철 막차의 풍경",
-    "동네 단골 카페의 아메리카노",
-    "주말 짧은 여행의 첫 새벽",
+    "Rainy Night", "Moonlit Room", "Quiet Snowfall", "Cozy Fireplace",
+    "Ocean at Night", "Misty Forest Dawn", "Starry Sky", "Autumn Rain",
+    "Candlelight Evening", "Distant Thunder", "Winter Window", "Late Night Calm",
+    "Soft Morning Light", "Peaceful Lake", "Gentle Snowstorm", "Dreaming Softly",
+    "Drifting Clouds", "Warm Cabin", "Midnight Piano", "Falling Leaves",
 ]
 
 
@@ -67,20 +47,18 @@ def today_seed() -> int:
 
 
 # ── 5×3 안 제안 (Gemini 사용) ───────────────────────────
-CURATOR_SYSTEM = """너는 한국 음악 트렌드 큐레이터야.
-사용자가 곡을 만들기 직전, 곡의 방향을 정할 수 있도록 5x3개 옵션을 제안한다.
+CURATOR_SYSTEM = """You are a curator for a GLOBAL sleep & ambient music YouTube channel (Healing Waves).
+Before a relaxing instrumental track (piano / ambient) is made, propose 5x3 options so the owner can pick a direction.
+Focus on calm, cozy, sleepy SCENES and MOODS. Everything must be in ENGLISH (global channel). Today is {today}.
 
-오늘은 {today}이고, 한국 기준 시즌과 날씨, 일반적인 분위기를 반영해.
-진솔정(곱창전골 가게) 마케팅 곡일 수도 있으니 그 컨텍스트도 일부 옵션에 녹여라.
-
-출력은 반드시 아래 JSON 한 덩어리만. 설명/코드펜스 금지.
+Output ONLY this JSON block. No explanation, no code fence.
 {{
-  "languages": ["한국어 (서정적)", "한국어 (감각적)", "한국어 + 영어 믹스", "영어", "한국어 (담백)"],
-  "moods": ["잔잔한 위로", "에너지 넘치는 응원", "감성적인 추억", "발랄한 일상", "어쿠스틱 감성"],
-  "keywords": ["진솔정 곱창전골 저녁", "5월 출근길", "주말 늦은 아침", "한강 야경", "비 오는 날 카페"]
+  "languages": ["Piano", "Ambient", "Lo-fi", "Nature", "Cinematic"],
+  "moods": ["Calm & Peaceful", "Warm & Cozy", "Dreamy & Soft", "Melancholic & Tender", "Serene & Still"],
+  "keywords": ["Rainy Night", "Moonlit Room", "Quiet Snowfall", "Cozy Fireplace", "Ocean at Night"]
 }}
 
-옵션은 매번 다양하게. 너무 비슷한 항목은 피하고, 한국 5월(초여름 진입) 무드를 반영해."""
+Vary the options each time. Keep them evocative sleep/relaxation scenes. Avoid anything energetic, loud, or food/marketing related."""
 
 
 def _strip_code_fence(text: str) -> str:
@@ -107,26 +85,20 @@ def _extract_json(text: str) -> Optional[str]:
 def _fallback_options() -> dict:
     """LLM 실패 시 기본 옵션 (계절 무관 안전한 세트)."""
     return {
-        "languages": [
-            "한국어 (서정적)",
-            "한국어 (감각적)",
-            "한국어 + 영어 믹스",
-            "영어",
-            "한국어 (담백)",
-        ],
+        "languages": ["Piano", "Ambient", "Lo-fi", "Nature", "Cinematic"],
         "moods": [
-            "잔잔한 위로",
-            "에너지 넘치는 응원",
-            "감성적인 추억",
-            "발랄한 일상",
-            "어쿠스틱 감성",
+            "Calm & Peaceful",
+            "Warm & Cozy",
+            "Dreamy & Soft",
+            "Melancholic & Tender",
+            "Serene & Still",
         ],
         "keywords": [
-            "진솔정 곱창전골 저녁",
-            "5월 출근길",
-            "주말 늦은 아침",
-            "한강 야경",
-            "비 오는 날 카페",
+            "Rainy Night",
+            "Moonlit Room",
+            "Quiet Snowfall",
+            "Cozy Fireplace",
+            "Ocean at Night",
         ],
         "source": "fallback",
     }
